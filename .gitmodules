@@ -1,0 +1,9 @@
+[submodule "px4"]
+	path = px4
+	url = https://github.com/lpurdy01/PX4-Autopilot.git
+[submodule "qgroundcontrol"]
+	path = qgroundcontrol
+	url = https://github.com/lpurdy01/qgroundcontrol.git
+[submodule "px4-gazebo-models"]
+	path = px4-gazebo-models
+	url = https://github.com/lpurdy01/PX4-gazebo-models.git
