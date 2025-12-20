@@ -211,11 +211,45 @@ A good agent contribution in this repo:
 
 ---
 
+## 11. MVP Development stages
+
+This project follows a staged development approach defined in the project charter.
+
+### Finding the stage documentation
+
+**Start here**: `docs/project_charters/mvp_development_stages_context.md`
+
+This document contains:
+* The complete MVP project charter
+* All 8 development stages (Stage 0 through Stage 8)
+* Success criteria for each stage
+* Agent suitability assessments
+* Constraints and deliverables
+
+### Current stage tracking
+
+To determine which stage is currently active or completed:
+1. Check recent git commits for stage-related messages
+2. Review `README.md` for current implementation status
+3. Verify deliverables listed in the charter against repository contents
+
+### Stage-specific work
+
+When assigned to work on a specific stage:
+1. Read the stage definition in `docs/project_charters/mvp_development_stages_context.md`
+2. Review the deliverables, constraints, and success conditions
+3. Check what's already been implemented
+4. Follow the permissions model (sections 3-4 above) for your changes
+5. If the stage requires submodule changes, follow section 5 (patch process)
+
+---
+
 ## Cross-reference
 
 For overall project intent and structure, see:
 
 * `README.md`
+* `docs/project_charters/mvp_development_stages_context.md` (MVP stages and charter)
 
 For upstream project context, see:
 
