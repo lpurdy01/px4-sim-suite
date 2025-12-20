@@ -183,13 +183,31 @@ sh tools/simtest build
 sh tools/simtest all
 ```
 
+### `run` command (Stage 4)
+
+The `run` subcommand now launches a **headless** PX4 SITL + Gazebo Classic session using the built firmware:
+
+* Ensures the PX4 build exists (invokes `build` automatically if missing)
+* Exports `HEADLESS=1` and runs `make px4_sitl gazebo-classic` from `px4/`
+* Uses the default quadrotor model (`PX4_SIM_MODEL=iris`) and model paths from `px4-gazebo-models`
+* Runs for a bounded duration (`SIM_DURATION` seconds; defaults to 20) before shutting down
+
+You can customize the duration or model:
+
+```sh
+SIM_DURATION=30 PX4_SIM_MODEL=iris sh tools/simtest run
+```
+
+Use `sh tools/simtest all` to run both build and simulation in sequence.
+
 ## Development container and CI build flow
 
-A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, and Python tooling preinstalled. The container automatically initializes all submodules recursively and installs the build essentials needed for `simtest build`. It mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install Gazebo Classic and SITL dependencies, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
 
-GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run `./tools/simtest build` for pull requests. The workflow publishes two artifacts for traceability:
+GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run both `./tools/simtest build` **and** the headless `./tools/simtest run` for pull requests. The workflow publishes three artifacts for traceability:
 
-* `artifacts/simtest-build.log` — the full build output
-* `artifacts/simtest-build-report.txt` — a simple timing summary (in seconds)
+* `artifacts/simtest-build.log` — full build output
+* `artifacts/simtest-run.log` — full headless run output
+* `artifacts/simtest-report.txt` — build and run timing summary (in seconds)
 
-These artifacts help triage build regressions across platforms while keeping the single `simtest` entry point consistent locally and in CI.
+These artifacts help triage build and runtime regressions across platforms while keeping the single `simtest` entry point consistent locally and in CI.

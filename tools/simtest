@@ -67,7 +67,46 @@ run_build() {
 }
 
 run_run() {
-  log '(stub) run called'
+  if [ ! -d "$PX4_DIR" ]; then
+    log "error: PX4 directory not found at $PX4_DIR/"
+    exit 1
+  fi
+
+  require_cmd timeout
+  require_cmd gzserver
+  require_cmd make
+
+  SIM_DURATION=${SIM_DURATION:-20}
+  SIM_MODEL=${PX4_SIM_MODEL:-iris}
+
+  if [ ! -x "$PX4_BUILD_DIR/bin/px4" ]; then
+    log "PX4 build not found, running build first"
+    run_build
+  fi
+
+  PX4_GZ_MODEL_PATH="$REPO_ROOT/px4-gazebo-models:$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$PX4_DIR/Tools/simulation/gz/models"
+  GAZEBO_MODEL_PATH="$PX4_GZ_MODEL_PATH"
+  GAZEBO_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic"
+
+  export PX4_SIM_MODEL="$SIM_MODEL"
+  export HEADLESS=1
+  export PX4_GZ_MODEL_PATH
+  export GAZEBO_MODEL_PATH
+  export GAZEBO_RESOURCE_PATH
+
+  log "Starting headless Gazebo Classic (model=$SIM_MODEL, duration=${SIM_DURATION}s)..."
+
+  if timeout "$SIM_DURATION" sh -c "cd '$PX4_DIR' && make px4_sitl gazebo-classic"; then
+    log "Simulation completed cleanly"
+  else
+    status=$?
+    if [ "$status" -eq 124 ]; then
+      log "Simulation stopped after ${SIM_DURATION}s"
+    else
+      log "error: simulation failed (exit $status), check logs"
+      exit 1
+    fi
+  fi
 }
 
 run_collect() {

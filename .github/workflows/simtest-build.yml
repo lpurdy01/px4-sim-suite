@@ -18,15 +18,24 @@ jobs:
           configFile: .devcontainer/devcontainer.json
           workspaceFolder: /workspaces/${{ github.event.repository.name }}
           runCmd: |
-            set -e
+            set -euo pipefail
             mkdir -p artifacts
-            START=$(date +%s)
+
+            BUILD_START=$(date +%s)
             ./tools/simtest build 2>&1 | tee artifacts/simtest-build.log
-            END=$(date +%s)
-            echo "build_seconds=$((END-START))" | tee artifacts/simtest-build-report.txt
+            BUILD_END=$(date +%s)
+
+            RUN_START=$(date +%s)
+            SIM_DURATION=20 ./tools/simtest run 2>&1 | tee artifacts/simtest-run.log
+            RUN_END=$(date +%s)
+
+            {
+              echo "build_seconds=$((BUILD_END-BUILD_START))"
+              echo "run_seconds=$((RUN_END-RUN_START))"
+            } | tee artifacts/simtest-report.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: simtest-build-artifacts
+          name: simtest-artifacts
           path: artifacts
