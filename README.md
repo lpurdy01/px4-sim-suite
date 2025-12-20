@@ -141,3 +141,31 @@ That file defines:
 * How submodule changes are proposed
 * How permissions and limitations are handled
 * How work is handed off between agents and humans
+
+---
+
+## Stage 1 (MVP) quick start
+
+Looking to bring up PX4 SITL on Ubuntu 24.04/WSL2 for the MVP? Follow the runbook in `docs/stage1-sitl.md` for dependency setup, headless launch, and a manual takeoff/land smoke test.
+
+---
+
+## Stage 1 CLI entry point (`tools/simtest`)
+
+The unified CLI entry point for the simulation pipeline is provided as a Stage 1 stub at `tools/simtest`.
+It is POSIX-shell-friendly and intended to run the same way on Ubuntu, WSL2, GitHub Actions, Codespaces, or a mounted Docker workspace.
+
+```
+Usage: simtest [build|run|collect|all|--help]
+  build     Build PX4, models, dependencies
+  run       Run the Gazebo simulation
+  collect   Fetch artifacts (logs, flight results)
+  all       Execute build + run + collect
+```
+
+Examples:
+
+```
+sh tools/simtest build
+sh tools/simtest all
+```
