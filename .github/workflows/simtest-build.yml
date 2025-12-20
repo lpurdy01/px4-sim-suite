@@ -1,7 +1,6 @@
 name: simtest-build
 
 on:
-  push:
   pull_request:
 
 jobs:
@@ -17,7 +16,7 @@ jobs:
         uses: devcontainers/ci@v0.3
         with:
           configFile: .devcontainer/devcontainer.json
-          workspaceFolder: /workspace/px4-sim-suite
+          workspaceFolder: /workspaces/${{ github.event.repository.name }}
           runCmd: |
             set -e
             mkdir -p artifacts

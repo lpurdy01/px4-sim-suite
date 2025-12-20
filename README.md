@@ -185,9 +185,9 @@ sh tools/simtest all
 
 ## Development container and CI build flow
 
-A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, and Python tooling preinstalled. The container automatically initializes all submodules recursively and installs the build essentials needed for `simtest build`.
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, and Python tooling preinstalled. The container automatically initializes all submodules recursively and installs the build essentials needed for `simtest build`. It mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
 
-GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run `./tools/simtest build` on every push and pull request. The workflow publishes two artifacts for traceability:
+GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run `./tools/simtest build` for pull requests. The workflow publishes two artifacts for traceability:
 
 * `artifacts/simtest-build.log` — the full build output
 * `artifacts/simtest-build-report.txt` — a simple timing summary (in seconds)
