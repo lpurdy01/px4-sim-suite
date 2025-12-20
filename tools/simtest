@@ -1,7 +1,12 @@
 #!/bin/sh
-# Unified entry point for PX4 simulation testing (Stage 1 stub)
+# Unified entry point for PX4 simulation testing
 
 set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PX4_DIR="$REPO_ROOT/px4"
+PX4_BUILD_DIR="$PX4_DIR/build/px4_sitl_default"
 
 print_usage() {
   cat <<'USAGE'
@@ -17,8 +22,48 @@ log() {
   printf '[simtest] %s\n' "$1"
 }
 
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    log "error: $1 not found, please install with apt"
+    exit 1
+  fi
+}
+
+jobs_count() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+  else
+    getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1
+  fi
+}
+
 run_build() {
-  log '(stub) build called'
+  log "PX4 directory: $PX4_DIR/"
+
+  if [ ! -d "$PX4_DIR" ]; then
+    log "error: PX4 directory not found at $PX4_DIR/"
+    exit 1
+  fi
+
+  require_cmd cmake
+  require_cmd make
+
+  log "Creating build directory: $PX4_BUILD_DIR"
+  mkdir -p "$PX4_BUILD_DIR"
+
+  log "Running PX4 CMake..."
+  if ! (cd "$PX4_DIR" && cmake -S . -B "$PX4_BUILD_DIR" -G "Unix Makefiles" -DPX4_BOARD=px4_sitl_default); then
+    log "error: cmake failed, check logs"
+    exit 1
+  fi
+
+  log "Building PX4 SITL for Gazebo..."
+  if ! (cd "$PX4_BUILD_DIR" && make -j"$(jobs_count)"); then
+    log "error: make failed, check logs"
+    exit 1
+  fi
+
+  log "Build complete"
 }
 
 run_run() {

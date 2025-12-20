@@ -163,9 +163,33 @@ Usage: simtest [build|run|collect|all|--help]
   all       Execute build + run + collect
 ```
 
+### `build` command (Stage 2)
+
+The `build` subcommand now runs the PX4 SITL CMake flow for Gazebo Classic (non-ROS) targeting the default quadrotor airframe:
+
+* Executes CMake from within `px4/` and configures `build/px4_sitl_default`
+* Uses the Unix Makefiles generator with `make -j$(nproc)`
+* Expects `cmake` and `make` to be installed; otherwise exits with a clear error
+
+Troubleshooting tips:
+
+* Ensure the `px4/` submodule is present (run `git submodule update --init --recursive` if needed)
+* Install `cmake` and `make` via your system package manager before running `simtest build`
+
 Examples:
 
 ```
 sh tools/simtest build
 sh tools/simtest all
 ```
+
+## Development container and CI build flow
+
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, and Python tooling preinstalled. The container automatically initializes all submodules recursively and installs the build essentials needed for `simtest build`.
+
+GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run `./tools/simtest build` on every push and pull request. The workflow publishes two artifacts for traceability:
+
+* `artifacts/simtest-build.log` — the full build output
+* `artifacts/simtest-build-report.txt` — a simple timing summary (in seconds)
+
+These artifacts help triage build regressions across platforms while keeping the single `simtest` entry point consistent locally and in CI.

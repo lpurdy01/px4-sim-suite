@@ -1,0 +1,33 @@
+name: simtest-build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  simtest-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build in devcontainer
+        uses: devcontainers/ci@v0.3
+        with:
+          configFile: .devcontainer/devcontainer.json
+          workspaceFolder: /workspace/px4-sim-suite
+          runCmd: |
+            set -e
+            mkdir -p artifacts
+            START=$(date +%s)
+            ./tools/simtest build 2>&1 | tee artifacts/simtest-build.log
+            END=$(date +%s)
+            echo "build_seconds=$((END-START))" | tee artifacts/simtest-build-report.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: simtest-build-artifacts
+          path: artifacts
