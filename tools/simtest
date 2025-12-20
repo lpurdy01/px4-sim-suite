@@ -1,0 +1,69 @@
+#!/bin/sh
+# Unified entry point for PX4 simulation testing (Stage 1 stub)
+
+set -eu
+
+print_usage() {
+  cat <<'USAGE'
+Usage: simtest [build|run|collect|all|--help]
+  build     Build PX4, models, dependencies
+  run       Run the Gazebo simulation
+  collect   Fetch artifacts (logs, flight results)
+  all       Execute build + run + collect
+USAGE
+}
+
+log() {
+  printf '[simtest] %s\n' "$1"
+}
+
+run_build() {
+  log '(stub) build called'
+}
+
+run_run() {
+  log '(stub) run called'
+}
+
+run_collect() {
+  log '(stub) collect called'
+}
+
+run_all() {
+  run_build
+  run_run
+  run_collect
+}
+
+main() {
+  cmd=${1-}
+
+  case "$cmd" in
+    build)
+      run_build
+      ;;
+    run)
+      run_run
+      ;;
+    collect)
+      run_collect
+      ;;
+    all)
+      run_all
+      ;;
+    -h|--help)
+      print_usage
+      ;;
+    "")
+      print_usage
+      exit 1
+      ;;
+    *)
+      printf '[simtest] error: unknown command %s\n' "$cmd" 1>&2
+      print_usage 1>&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
