@@ -163,9 +163,53 @@ Usage: simtest [build|run|collect|all|--help]
   all       Execute build + run + collect
 ```
 
+### `build` command (Stage 2)
+
+The `build` subcommand now runs the PX4 SITL CMake flow for Gazebo Classic (non-ROS) targeting the default quadrotor airframe:
+
+* Executes CMake from within `px4/` and configures `build/px4_sitl_default`
+* Uses the Unix Makefiles generator with `make -j$(nproc)`
+* Expects `cmake` and `make` to be installed; otherwise exits with a clear error
+
+Troubleshooting tips:
+
+* Ensure the `px4/` submodule is present (run `git submodule update --init --recursive` if needed)
+* Install `cmake` and `make` via your system package manager before running `simtest build`
+
 Examples:
 
 ```
 sh tools/simtest build
 sh tools/simtest all
 ```
+
+### `run` command (Stage 4)
+
+The `run` subcommand now launches a **headless** PX4 SITL + Gazebo Harmonic session using the built firmware:
+
+* Ensures the PX4 build exists (invokes `build` automatically if missing)
+* Uses the modern Gazebo Harmonic (`gz` CLI) flow, invoking `make px4_sitl gz_<model>` from `px4/`
+* Defaults to the `x500` quadrotor (override with `PX4_SIM_MODEL`) and extends `PX4_GZ_MODEL_PATH`/`GZ_SIM_RESOURCE_PATH` with `px4-gazebo-models`
+* Runs for a bounded duration (`SIM_DURATION` seconds; defaults to 20) before shutting down
+
+You can customize the duration or model:
+
+```sh
+SIM_DURATION=30 PX4_SIM_MODEL=x500 sh tools/simtest run
+```
+
+Use `sh tools/simtest all` to run both build and simulation in sequence.
+
+The `run` flow launches a lightweight MAVLink heartbeat helper implemented with `pymavlink` so PX4 no longer reports a missing GCS on startup. The dev container installs this dependency automatically; native environments should ensure `pymavlink` is available (for example via `pip install --user pymavlink`).
+
+## Development container and CI build flow
+
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install SITL dependencies (including the Gazebo Harmonic toolchain via the `gz` CLI), installs the `gz-harmonic` meta-package explicitly, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place. The post-create hook now installs `pymavlink` alongside the existing PX4 Python tooling so the heartbeat helper is available everywhere.
+
+For a single cross-platform entry point, use `tools/run_ci.sh`. Without arguments it builds (or updates) the dev container using the local `devcontainer` CLI and then runs the standard build-and-run sequence inside the container. GitHub Actions calls the same script with the `--inside-devcontainer` flag so both CI and local developers share identical orchestration. The workflow publishes three artifacts for traceability:
+
+* `artifacts/simtest-build.log` — full build output
+* `artifacts/simtest-run.log` — full headless run output
+* `artifacts/simtest-report.txt` — build and run timing summary (in seconds)
+
+These artifacts help triage build and runtime regressions across platforms while keeping the single `simtest` entry point consistent locally and in CI.
