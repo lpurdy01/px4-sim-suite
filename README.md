@@ -185,24 +185,24 @@ sh tools/simtest all
 
 ### `run` command (Stage 4)
 
-The `run` subcommand now launches a **headless** PX4 SITL + Gazebo Classic session using the built firmware:
+The `run` subcommand now launches a **headless** PX4 SITL + Gazebo Harmonic session using the built firmware:
 
 * Ensures the PX4 build exists (invokes `build` automatically if missing)
-* Exports `HEADLESS=1` and runs `make px4_sitl gazebo-classic` from `px4/`
-* Uses the default quadrotor model (`PX4_SIM_MODEL=iris`) and model paths from `px4-gazebo-models`
+* Uses the modern Gazebo Harmonic (`gz` CLI) flow, invoking `make px4_sitl gz_<model>` from `px4/`
+* Defaults to the `x500` quadrotor (override with `PX4_SIM_MODEL`) and extends `PX4_GZ_MODEL_PATH`/`GZ_SIM_RESOURCE_PATH` with `px4-gazebo-models`
 * Runs for a bounded duration (`SIM_DURATION` seconds; defaults to 20) before shutting down
 
 You can customize the duration or model:
 
 ```sh
-SIM_DURATION=30 PX4_SIM_MODEL=iris sh tools/simtest run
+SIM_DURATION=30 PX4_SIM_MODEL=x500 sh tools/simtest run
 ```
 
 Use `sh tools/simtest all` to run both build and simulation in sequence.
 
 ## Development container and CI build flow
 
-A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install Gazebo Classic and SITL dependencies, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install SITL dependencies (including the Gazebo Harmonic toolchain via the `gz` CLI), installs the `gz-harmonic` meta-package explicitly, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
 
 GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run both `./tools/simtest build` **and** the headless `./tools/simtest run` for pull requests. The workflow publishes three artifacts for traceability:
 

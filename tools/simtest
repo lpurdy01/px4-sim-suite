@@ -73,30 +73,26 @@ run_run() {
   fi
 
   require_cmd timeout
-  require_cmd gzserver
+  require_cmd gz
   require_cmd make
 
   SIM_DURATION=${SIM_DURATION:-20}
-  SIM_MODEL=${PX4_SIM_MODEL:-iris}
+  SIM_MODEL=${PX4_SIM_MODEL:-x500}
 
   if [ ! -x "$PX4_BUILD_DIR/bin/px4" ]; then
     log "PX4 build not found, running build first"
     run_build
   fi
 
-  PX4_GZ_MODEL_PATH="$REPO_ROOT/px4-gazebo-models:$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$PX4_DIR/Tools/simulation/gz/models"
-  GAZEBO_MODEL_PATH="$PX4_GZ_MODEL_PATH"
-  GAZEBO_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic"
+  PX4_GZ_MODEL_PATH="$REPO_ROOT/px4-gazebo-models:$PX4_DIR/Tools/simulation/gz/models"
+  GZ_SIM_RESOURCE_PATH="$PX4_GZ_MODEL_PATH:$PX4_DIR/Tools/simulation/gz/worlds"
 
-  export PX4_SIM_MODEL="$SIM_MODEL"
-  export HEADLESS=1
   export PX4_GZ_MODEL_PATH
-  export GAZEBO_MODEL_PATH
-  export GAZEBO_RESOURCE_PATH
+  export GZ_SIM_RESOURCE_PATH
 
-  log "Starting headless Gazebo Classic (model=$SIM_MODEL, duration=${SIM_DURATION}s)..."
+  log "Starting headless Gazebo Harmonic (model=$SIM_MODEL, duration=${SIM_DURATION}s)..."
 
-  if timeout "$SIM_DURATION" sh -c "cd '$PX4_DIR' && make px4_sitl gazebo-classic"; then
+  if timeout "$SIM_DURATION" sh -c "cd '$PX4_DIR' && make px4_sitl gz_${SIM_MODEL}"; then
     log "Simulation completed cleanly"
   else
     status=$?
