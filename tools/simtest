@@ -29,6 +29,12 @@ require_cmd() {
   fi
 }
 
+cleanup_sim_processes() {
+  pkill -f "$PX4_BUILD_DIR/bin/px4" >/dev/null 2>&1 || true
+  pkill -f "gz sim" >/dev/null 2>&1 || true
+  pkill -f "cmake --build .* gz_" >/dev/null 2>&1 || true
+}
+
 jobs_count() {
   if command -v nproc >/dev/null 2>&1; then
     nproc
@@ -48,18 +54,19 @@ run_build() {
   require_cmd cmake
   require_cmd make
 
-  log "Creating build directory: $PX4_BUILD_DIR"
-  mkdir -p "$PX4_BUILD_DIR"
+  jobs=$(jobs_count)
+  if [ -z "$jobs" ] || [ "$jobs" -lt 1 ]; then
+    jobs=1
+  fi
 
-  log "Running PX4 CMake..."
-  if ! (cd "$PX4_DIR" && cmake -S . -B "$PX4_BUILD_DIR" -G "Unix Makefiles" -DPX4_BOARD=px4_sitl_default); then
-    log "error: cmake failed, check logs"
+  log "Building px4_sitl_default with $jobs parallel jobs..."
+  if ! (cd "$PX4_DIR" && make -j"$jobs" px4_sitl_default); then
+    log "error: make px4_sitl_default failed, check logs"
     exit 1
   fi
 
-  log "Building PX4 SITL for Gazebo..."
-  if ! (cd "$PX4_BUILD_DIR" && make -j"$(jobs_count)"); then
-    log "error: make failed, check logs"
+  if [ ! -x "$PX4_BUILD_DIR/bin/px4" ]; then
+    log "error: px4 binary missing after build"
     exit 1
   fi
 
@@ -75,13 +82,46 @@ run_run() {
   require_cmd timeout
   require_cmd gz
   require_cmd make
+  require_cmd python3
 
-  SIM_DURATION=${SIM_DURATION:-20}
-  SIM_MODEL=${PX4_SIM_MODEL:-x500}
+  SIM_DURATION=${SIM_DURATION:-60}
+  SIM_TIMEOUT_SIGNAL=${SIM_TIMEOUT_SIGNAL:-SIGINT}
+  SIM_KILL_AFTER=${SIM_KILL_AFTER:-30}
+
+  SIM_MODEL_RAW=${PX4_SIM_MODEL:-x500}
+  case "$SIM_MODEL_RAW" in
+    gz_*) MODEL_TARGET="$SIM_MODEL_RAW" ;;
+    *) MODEL_TARGET="gz_${SIM_MODEL_RAW}" ;;
+  esac
 
   if [ ! -x "$PX4_BUILD_DIR/bin/px4" ]; then
     log "PX4 build not found, running build first"
     run_build
+  fi
+
+  cleanup_sim_processes
+
+  HEARTBEAT_HELPER="$SCRIPT_DIR/mavlink_heartbeat.py"
+  HEARTBEAT_PID=""
+
+  cleanup_trap() {
+    if [ -n "$HEARTBEAT_PID" ]; then
+      kill "$HEARTBEAT_PID" >/dev/null 2>&1 || true
+      wait "$HEARTBEAT_PID" >/dev/null 2>&1 || true
+    fi
+    cleanup_sim_processes
+  }
+
+  trap cleanup_trap INT TERM EXIT
+
+  if [ -f "$HEARTBEAT_HELPER" ]; then
+    HB_DURATION=$((SIM_DURATION + SIM_KILL_AFTER))
+    log "Starting MAVLink heartbeat helper on UDP 14550"
+    if python3 "$HEARTBEAT_HELPER" --duration "$HB_DURATION" --rate 2.0 >/dev/null 2>&1 & then
+      HEARTBEAT_PID=$!
+    else
+      log "warning: failed to launch heartbeat helper"
+    fi
   fi
 
   PX4_GZ_MODEL_PATH="$REPO_ROOT/px4-gazebo-models:$PX4_DIR/Tools/simulation/gz/models"
@@ -89,20 +129,25 @@ run_run() {
 
   export PX4_GZ_MODEL_PATH
   export GZ_SIM_RESOURCE_PATH
+  export HEADLESS=1
+  export PX4_SIM_MODEL="$MODEL_TARGET"
 
-  log "Starting headless Gazebo Harmonic (model=$SIM_MODEL, duration=${SIM_DURATION}s)..."
+  log "Starting headless Gazebo Harmonic (model=$MODEL_TARGET, run window=${SIM_DURATION}s)..."
 
-  if timeout "$SIM_DURATION" sh -c "cd '$PX4_DIR' && make px4_sitl gz_${SIM_MODEL}"; then
+  if timeout --foreground --signal="$SIM_TIMEOUT_SIGNAL" --kill-after="$SIM_KILL_AFTER" "$SIM_DURATION" sh -c "cd '$PX4_DIR' && make px4_sitl '$MODEL_TARGET'"; then
     log "Simulation completed cleanly"
   else
     status=$?
-    if [ "$status" -eq 124 ]; then
-      log "Simulation stopped after ${SIM_DURATION}s"
+    if [ "$status" -eq 124 ] || [ "$status" -eq 137 ] || [ "$status" -eq 143 ]; then
+      log "Simulation stopped after ${SIM_DURATION}s window"
     else
       log "error: simulation failed (exit $status), check logs"
       exit 1
     fi
   fi
+
+  trap - INT TERM EXIT
+  cleanup_trap
 }
 
 run_collect() {

@@ -200,11 +200,13 @@ SIM_DURATION=30 PX4_SIM_MODEL=x500 sh tools/simtest run
 
 Use `sh tools/simtest all` to run both build and simulation in sequence.
 
+The `run` flow launches a lightweight MAVLink heartbeat helper implemented with `pymavlink` so PX4 no longer reports a missing GCS on startup. The dev container installs this dependency automatically; native environments should ensure `pymavlink` is available (for example via `pip install --user pymavlink`).
+
 ## Development container and CI build flow
 
-A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install SITL dependencies (including the Gazebo Harmonic toolchain via the `gz` CLI), installs the `gz-harmonic` meta-package explicitly, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place.
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install SITL dependencies (including the Gazebo Harmonic toolchain via the `gz` CLI), installs the `gz-harmonic` meta-package explicitly, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place. The post-create hook now installs `pymavlink` alongside the existing PX4 Python tooling so the heartbeat helper is available everywhere.
 
-GitHub Actions uses the same dev container definition in `.github/workflows/simtest-build.yml` to run both `./tools/simtest build` **and** the headless `./tools/simtest run` for pull requests. The workflow publishes three artifacts for traceability:
+For a single cross-platform entry point, use `tools/run_ci.sh`. Without arguments it builds (or updates) the dev container using the local `devcontainer` CLI and then runs the standard build-and-run sequence inside the container. GitHub Actions calls the same script with the `--inside-devcontainer` flag so both CI and local developers share identical orchestration. The workflow publishes three artifacts for traceability:
 
 * `artifacts/simtest-build.log` — full build output
 * `artifacts/simtest-run.log` — full headless run output
