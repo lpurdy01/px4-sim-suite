@@ -66,6 +66,14 @@ Agents may directly edit and commit:
 
 Agents should prefer **minimal, local changes**.
 
+### Shared environment manifest
+
+- The single source of truth for host dependencies is `tools/environment_manifest.json`.
+- The helper `tools/env_requirements.py` reads that manifest to install (`install`) or validate (`check`) tooling.
+- `simtest doctor` simply runs the `check` action; update the manifest first, then rerun the command when new prerequisites are needed.
+- The devcontainer post-create hook also calls the helper, so any manifest edits automatically flow into local and CI containers.
+- Do **not** hard-code additional dependency lists in other scripts; reference or extend the manifest instead.
+
 ---
 
 ## 4. What agents MUST NOT modify directly

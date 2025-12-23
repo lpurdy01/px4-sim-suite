@@ -11,7 +11,7 @@
     }
   },
   "updateContentCommand": "git submodule update --init --recursive",
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build ccache python3-pip python3-venv rsync && pip3 install --user --upgrade pip && pip3 install --user 'empy==3.3.4' jinja2 kconfiglib pyros-genmsg pyyaml jsonschema 'pymavlink==2.4.49' && cd /workspaces/${localWorkspaceFolderBasename}/px4 && bash Tools/setup/ubuntu.sh --no-nuttx && sudo apt-get install -y gz-harmonic",
+  "postCreateCommand": "cd /workspaces/${localWorkspaceFolderBasename} && python3 tools/env_requirements.py install && cd /workspaces/${localWorkspaceFolderBasename}/px4 && bash Tools/setup/ubuntu.sh --no-nuttx",
   "customizations": {
     "vscode": {
       "settings": {
