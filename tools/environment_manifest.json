@@ -1,0 +1,46 @@
+{
+  "commands": [
+    "cmake",
+    "make",
+    "python3",
+    "pip3",
+    "gz",
+    "timeout"
+  ],
+  "paths": [
+    "px4",
+    "px4-gazebo-models",
+    "tests/scenarios"
+  ],
+  "apt_packages": [
+    "build-essential",
+    "cmake",
+    "ninja-build",
+    "ccache",
+    "python3-pip",
+    "python3-venv",
+    "rsync"
+  ],
+  "pip_packages": [
+    "pip",
+    "empy==3.3.4",
+    "jinja2",
+    "kconfiglib",
+    "pyros-genmsg",
+    "pyyaml",
+    "jsonschema",
+    "pymavlink==2.4.49",
+    "beautifulsoup4==4.12.3",
+    "plotly==5.24.1",
+    "pyulog==0.9.0"
+  ],
+  "python_modules": [
+    "pymavlink",
+    "pyulog",
+    "bs4",
+    "plotly"
+  ],
+  "scripts": [
+    "px4/Tools/setup/ubuntu.sh --no-nuttx"
+  ]
+}

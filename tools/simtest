@@ -10,10 +10,11 @@ PX4_BUILD_DIR="$PX4_DIR/build/px4_sitl_default"
 
 print_usage() {
   cat <<'USAGE'
-Usage: simtest [build|run|collect|all|--help]
+Usage: simtest [build|run|collect|doctor|all|--help]
   build     Build PX4, models, dependencies
   run       Run the Gazebo simulation
   collect   Fetch artifacts (logs, flight results)
+  doctor    Validate environment prerequisites
   all       Execute build + run + collect
 USAGE
 }
@@ -84,15 +85,35 @@ run_run() {
   require_cmd make
   require_cmd python3
 
-  SIM_DURATION=${SIM_DURATION:-60}
+  SIM_DURATION=${SIM_DURATION:-45}
   SIM_TIMEOUT_SIGNAL=${SIM_TIMEOUT_SIGNAL:-SIGINT}
   SIM_KILL_AFTER=${SIM_KILL_AFTER:-30}
+
+  SCENARIO_NAME=${SIMTEST_SCENARIO:-takeoff_land}
+  SCENARIO_SCRIPT=""
+  SCENARIO_PID=""
+  SCENARIO_EXIT=0
+  SCENARIO_LOG=""
+  SCENARIO_SUMMARY=""
+  SCENARIO_TAIL_PID=""
+
+  ARTIFACT_DIR=${SIMTEST_ARTIFACT_DIR:-$REPO_ROOT/artifacts}
+  mkdir -p "$ARTIFACT_DIR"
 
   SIM_MODEL_RAW=${PX4_SIM_MODEL:-x500}
   case "$SIM_MODEL_RAW" in
     gz_*) MODEL_TARGET="$SIM_MODEL_RAW" ;;
     *) MODEL_TARGET="gz_${SIM_MODEL_RAW}" ;;
   esac
+
+  if [ "$SCENARIO_NAME" != "none" ]; then
+    CANDIDATE="$REPO_ROOT/tests/scenarios/${SCENARIO_NAME}.py"
+    if [ -f "$CANDIDATE" ]; then
+      SCENARIO_SCRIPT="$CANDIDATE"
+    else
+      log "warning: scenario script $SCENARIO_NAME not found at $CANDIDATE, skipping"
+    fi
+  fi
 
   if [ ! -x "$PX4_BUILD_DIR/bin/px4" ]; then
     log "PX4 build not found, running build first"
@@ -108,13 +129,27 @@ run_run() {
     if [ -n "$HEARTBEAT_PID" ]; then
       kill "$HEARTBEAT_PID" >/dev/null 2>&1 || true
       wait "$HEARTBEAT_PID" >/dev/null 2>&1 || true
+      HEARTBEAT_PID=""
+    fi
+    if [ -n "$SCENARIO_PID" ]; then
+      if wait "$SCENARIO_PID"; then
+        SCENARIO_EXIT=0
+      else
+        SCENARIO_EXIT=$?
+      fi
+      SCENARIO_PID=""
+    fi
+    if [ -n "$SCENARIO_TAIL_PID" ]; then
+      kill "$SCENARIO_TAIL_PID" >/dev/null 2>&1 || true
+      wait "$SCENARIO_TAIL_PID" >/dev/null 2>&1 || true
+      SCENARIO_TAIL_PID=""
     fi
     cleanup_sim_processes
   }
 
   trap cleanup_trap INT TERM EXIT
 
-  if [ -f "$HEARTBEAT_HELPER" ]; then
+  if [ -f "$HEARTBEAT_HELPER" ] && [ -z "$SCENARIO_SCRIPT" ]; then
     HB_DURATION=$((SIM_DURATION + SIM_KILL_AFTER))
     log "Starting MAVLink heartbeat helper on UDP 14550"
     if python3 "$HEARTBEAT_HELPER" --duration "$HB_DURATION" --rate 2.0 >/dev/null 2>&1 & then
@@ -122,6 +157,24 @@ run_run() {
     else
       log "warning: failed to launch heartbeat helper"
     fi
+  fi
+
+  if [ -n "$SCENARIO_SCRIPT" ]; then
+    SCENARIO_DELAY=${SIMTEST_SCENARIO_DELAY:-8}
+    SCENARIO_LOG="$ARTIFACT_DIR/${SCENARIO_NAME}.log"
+    SCENARIO_SUMMARY="$ARTIFACT_DIR/${SCENARIO_NAME}_summary.json"
+    : >"$SCENARIO_LOG"
+    : >"$SCENARIO_SUMMARY"
+    if command -v tail >/dev/null 2>&1; then
+      tail -n0 -F "$SCENARIO_LOG" &
+      SCENARIO_TAIL_PID=$!
+    fi
+    log "Starting scenario $SCENARIO_NAME after ${SCENARIO_DELAY}s delay"
+    (
+      sleep "$SCENARIO_DELAY"
+      SIMTEST_SCENARIO_RESULT="$SCENARIO_SUMMARY" python3 -u "$SCENARIO_SCRIPT"
+    ) >>"$SCENARIO_LOG" 2>&1 &
+    SCENARIO_PID=$!
   fi
 
   PX4_GZ_MODEL_PATH="$REPO_ROOT/px4-gazebo-models:$PX4_DIR/Tools/simulation/gz/models"
@@ -148,10 +201,57 @@ run_run() {
 
   trap - INT TERM EXIT
   cleanup_trap
+
+  if [ "$SCENARIO_EXIT" -ne 0 ]; then
+    log "error: scenario exited with status $SCENARIO_EXIT"
+    exit 1
+  fi
+
+  if [ -n "$SCENARIO_SUMMARY" ] && [ -f "$SCENARIO_SUMMARY" ]; then
+    log "Scenario summary: $(cat "$SCENARIO_SUMMARY")"
+  fi
+
+  latest_log=$(ls -1t "$PX4_DIR"/build/px4_sitl_default/rootfs/log/*/*.ulg "$PX4_DIR"/log/*/*.ulg 2>/dev/null | head -n1 || true)
+  if [ -n "$latest_log" ] && [ -f "$latest_log" ]; then
+    dest="$ARTIFACT_DIR/$(basename "$latest_log")"
+    if cp "$latest_log" "$dest" 2>/dev/null; then
+      log "PX4 log archived to $dest"
+      if cp "$dest" "$ARTIFACT_DIR/latest_sitl.ulg" 2>/dev/null; then
+        log "PX4 canonical log updated at $ARTIFACT_DIR/latest_sitl.ulg"
+      else
+        log "warning: unable to refresh canonical log at $ARTIFACT_DIR/latest_sitl.ulg"
+      fi
+    else
+      log "warning: unable to copy PX4 log from $latest_log"
+    fi
+  fi
 }
 
 run_collect() {
-  log '(stub) collect called'
+  ARTIFACT_DIR=${SIMTEST_ARTIFACT_DIR:-$REPO_ROOT/artifacts}
+
+  if [ ! -d "$ARTIFACT_DIR" ]; then
+    log "warning: artifact directory not found at $ARTIFACT_DIR/"
+    return
+  fi
+
+  log "Artifacts located in $ARTIFACT_DIR/"
+  if ls -A "$ARTIFACT_DIR" >/dev/null 2>&1; then
+    ls "$ARTIFACT_DIR" | sed 's/^/[simtest]   /'
+  else
+    log "  (empty)"
+  fi
+}
+
+run_doctor() {
+  require_cmd python3
+
+  if python3 "$SCRIPT_DIR/env_requirements.py" check; then
+    log "doctor checks passed"
+  else
+    log "error: environment diagnostics failed"
+    exit 1
+  fi
 }
 
 run_all() {
@@ -172,6 +272,9 @@ main() {
       ;;
     collect)
       run_collect
+      ;;
+    doctor)
+      run_doctor
       ;;
     all)
       run_all
