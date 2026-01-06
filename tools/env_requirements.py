@@ -6,14 +6,19 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Any, Dict, Iterable, List
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST = REPO_ROOT / "tools" / "environment_manifest.json"
+USER_BIN_DIRS = (
+    Path.home() / ".local" / "bin",
+    Path("/usr/local/py-utils/bin"),
+)
 
 
 class CheckResult:
@@ -41,6 +46,23 @@ def load_manifest(path: Path) -> dict:
         raise FileNotFoundError(f"manifest not found at {path}")
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def resolve_path(candidate: str) -> Path:
+    return Path(os.path.expanduser(candidate)).resolve()
+
+def extend_command_path() -> None:
+    current = os.environ.get("PATH", "")
+    segments = [segment for segment in current.split(os.pathsep) if segment]
+
+    for directory in USER_BIN_DIRS:
+        if not directory.exists():
+            continue
+        directory_str = str(directory)
+        if directory_str not in segments:
+            segments.insert(0, directory_str)
+
+    os.environ["PATH"] = os.pathsep.join(segments)
 
 
 def ensure_commands(names: Iterable[str], result: CheckResult) -> None:
@@ -71,7 +93,77 @@ def ensure_modules(modules: Iterable[str], result: CheckResult) -> None:
             print(f"[doctor] python module '{module}' import ok")
 
 
+def qt_root_from_config(config: Dict[str, Any]) -> Path:
+    install_dir = resolve_path(config.get("install_dir", "~/Qt"))
+    version = config.get("version")
+    arch = config.get("arch", "gcc_64")
+    if not version:
+        raise ValueError("qt.version is required in environment manifest")
+    return install_dir / version / arch
+
+
+def install_qt(config: Dict[str, Any]) -> None:
+    if not config:
+        return
+
+    qt_root = qt_root_from_config(config)
+    qt_cmake = qt_root / "bin" / "qt-cmake"
+
+    if qt_cmake.exists():
+        print(f"[install] Qt already present at {qt_root}")
+        return
+
+    host = config.get("host", "linux")
+    target = config.get("target", "desktop")
+    version = config.get("version")
+    arch = config.get("arch", "gcc_64")
+    installer_arch = config.get("installer_arch", arch)
+    modules = config.get("modules") or []
+    install_dir = resolve_path(config.get("install_dir", "~/Qt"))
+
+    install_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "aqt",
+        "install-qt",
+        host,
+        target,
+        version,
+        installer_arch,
+        "--outputdir",
+        str(install_dir),
+    ]
+
+    if modules:
+        cmd.extend(["-m", *modules])
+
+    print("[install] installing Qt toolchain via aqt")
+    subprocess.run(cmd, check=True)
+
+    if not qt_cmake.exists():
+        raise RuntimeError(f"Qt installation incomplete, missing {qt_cmake}")
+
+
+def ensure_qt(config: Dict[str, Any], result: CheckResult) -> None:
+    if not config:
+        return
+
+    try:
+        qt_root = qt_root_from_config(config)
+    except ValueError as error:
+        result.add_error(str(error))
+        return
+
+    qt_cmake = qt_root / "bin" / "qt-cmake"
+    if qt_cmake.exists():
+        print(f"[doctor] Qt toolkit available at {qt_root}")
+    else:
+        result.add_error(f"Qt toolkit missing (expected qt-cmake at {qt_cmake})")
+
+
 def run_install(manifest: dict) -> None:
+    extend_command_path()
+
     apt_packages = manifest.get("apt_packages", [])
     pip_packages = manifest.get("pip_packages", [])
     scripts = manifest.get("scripts", [])
@@ -99,6 +191,8 @@ def run_install(manifest: dict) -> None:
             print("[install] installing python packages (user scope)")
             subprocess.run(["pip3", "install", "--user", "--upgrade", *standard_targets], check=True)
 
+    install_qt(manifest.get("qt", {}))
+
     for script in scripts:
         print(f"[install] running setup script: {script}")
         subprocess.run(script, shell=True, check=True, cwd=REPO_ROOT)
@@ -107,11 +201,14 @@ def run_install(manifest: dict) -> None:
 
 
 def run_check(manifest: dict) -> bool:
+    extend_command_path()
+
     result = CheckResult()
 
     ensure_commands(manifest.get("commands", []), result)
     ensure_paths(manifest.get("paths", []), result)
     ensure_modules(manifest.get("python_modules", []), result)
+    ensure_qt(manifest.get("qt", {}), result)
 
     result.summarize()
     return result.ok

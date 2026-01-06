@@ -6,6 +6,8 @@ on:
 jobs:
   simtest-build:
     runs-on: ubuntu-24.04
+    env:
+      SIMTEST_ENABLE_QGC: ${{ vars.SIMTEST_ENABLE_QGC || '0' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

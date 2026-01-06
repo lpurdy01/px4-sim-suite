@@ -35,7 +35,7 @@ All workflows must assume **the weakest agent** by default.
 
 ## 2. Submodules: rules and reality
 
-This repo uses git submodules for PX4, QGroundControl, and Gazebo models.
+This repo uses git submodules for PX4, QGroundControl, and Gazebo models. All three point to forks maintained under the lpurdy01 GitHub account; treat those remotes as authoritative unless the human owner directs otherwise.
 
 ### Important facts agents must understand
 

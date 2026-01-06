@@ -324,6 +324,7 @@ Allow interactive debugging without breaking headless flow.
 **Deliverables**
 
 * Optional flag (e.g. `--gui`)
+* Headless QGroundControl harness (`simtest qgc run`) that uploads the default plan and records results under `artifacts/qgc/`
 * Documented but not required
 
 **Success condition**

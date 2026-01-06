@@ -156,12 +156,11 @@ The unified CLI entry point for the simulation pipeline is provided as a Stage 1
 It is POSIX-shell-friendly and intended to run the same way on Ubuntu, WSL2, GitHub Actions, Codespaces, or a mounted Docker workspace.
 
 ```
-Usage: simtest [build|run|collect|doctor|all|--help]
-	build     Build PX4, models, dependencies
-	run       Run the Gazebo simulation
-	collect   Fetch artifacts (logs, flight results)
-	doctor    Validate environment prerequisites against the manifest
-	all       Execute build + run + collect
+Usage: simtest [build|run|collect|all|--help]
+  build     Build PX4, models, dependencies
+  run       Run the Gazebo simulation
+  collect   Fetch artifacts (logs, flight results)
+  all       Execute build + run + collect
 ```
 
 ### `build` command (Stage 2)
@@ -202,10 +201,6 @@ SIM_DURATION=30 PX4_SIM_MODEL=x500 sh tools/simtest run
 
 Use `sh tools/simtest all` to run both build and simulation in sequence.
 
-### `doctor` command (Stage 2)
-
-`simtest doctor` runs lightweight diagnostics that parse `tools/environment_manifest.json` and confirm the required executables, Python modules, and repo folders are present. It is safe to run repeatedly and provides a single-source-of-truth check that matches the packages installed by the dev container. The command exits non-zero if anything is missing so CI wrappers can gate expensive build steps.
-
 If you want to disable automated flight control (for interactive debugging or manual testing), set `SIMTEST_SCENARIO=none` before invoking `simtest run`. To plug in a different scripted mission, drop a Python helper under `tests/scenarios/` and set `SIMTEST_SCENARIO=<name>`.
 
 Each run persists its telemetry and summary artifacts under `artifacts/` (override with `SIMTEST_ARTIFACT_DIR`):
@@ -218,13 +213,22 @@ Use `sh tools/simtest collect` to list the files produced in the selected artifa
 
 The `run` flow launches a lightweight MAVLink heartbeat helper implemented with `pymavlink` so PX4 no longer reports a missing GCS on startup. The dev container installs this dependency automatically; native environments should ensure `pymavlink` is available (for example via `pip install --user pymavlink`).
 
+### QGroundControl automation (optional)
+
+`tools/simtest` also provides a Stage 8 scaffold for exercising QGroundControl without leaving the repo:
+
+- `sh tools/simtest qgc build` configures QGC with `QGC_BUILD_TESTING=ON` by invoking the Qt toolchain declared in `tools/environment_manifest.json` and produces both the desktop binary and AppImage target inside `build/qgc-simtest/`.
+- `sh tools/simtest qgc test` runs the CTest suite headlessly (`xvfb-run` when available, otherwise `QT_QPA_PLATFORM=offscreen`).
+- `sh tools/simtest qgc stub` launches the `--simple-boot-test` flow under Xvfb (if present) and drives a small MAVLink stub defined in `tools/qgc_virtual_px4.py`; artifacts are written to `artifacts/qgc/`.
+- `SIMTEST_ENABLE_QGC=1 ./tools/run_ci.sh --inside-devcontainer` (or the matching GitHub Actions variable) enables the same steps in CI, appending timing data to `artifacts/simtest-report.txt` alongside dedicated QGC logs.
+	- Set `SIMTEST_QGC_SKIP_PARAM_CHECK=1` when you need the stub to succeed without a parameter request (useful for ad-hoc debugging).
+
 ## Development container and CI build flow
 
-A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs `tools/env_requirements.py install` to consume `tools/environment_manifest.json`, and executes PX4’s `Tools/setup/ubuntu.sh --no-nuttx` so the Gazebo Harmonic toolchain and other SITL dependencies are available. The repository mounts at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place. The post-create hook installs the Python packages defined in the manifest (including `pymavlink`) so the heartbeat helper is available everywhere.
+A VS Code-compatible dev container is defined in `.devcontainer/devcontainer.json` to provide a consistent Ubuntu 24.04 base with CMake, Make, Python tooling, and PX4’s own Ubuntu setup script preinstalled. The container automatically initializes all submodules recursively, runs PX4’s `Tools/setup/ubuntu.sh --no-nuttx` to install SITL dependencies (including the Gazebo Harmonic toolchain via the `gz` CLI), installs the `gz-harmonic` meta-package explicitly, and mounts the repository at `/workspaces/<repo>`, matching the default Dev Containers layout so commands like the update hook run in the right place. The post-create hook now installs `pymavlink` alongside the existing PX4 Python tooling so the heartbeat helper is available everywhere.
 
-For a single cross-platform entry point, use `tools/run_ci.sh`. Without arguments it builds (or updates) the dev container using the local `devcontainer` CLI and then runs the standard doctor/build/run sequence inside the container. GitHub Actions calls the same script with the `--inside-devcontainer` flag so both CI and local developers share identical orchestration. The workflow publishes four artifacts for traceability:
+For a single cross-platform entry point, use `tools/run_ci.sh`. Without arguments it builds (or updates) the dev container using the local `devcontainer` CLI and then runs the standard build-and-run sequence inside the container. GitHub Actions calls the same script with the `--inside-devcontainer` flag so both CI and local developers share identical orchestration. The workflow publishes three artifacts for traceability:
 
-* `artifacts/simtest-doctor.log` — environment validation output
 * `artifacts/simtest-build.log` — full build output
 * `artifacts/simtest-run.log` — full headless run output
 * `artifacts/simtest-report.txt` — build and run timing summary (in seconds)

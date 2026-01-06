@@ -7,20 +7,55 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PX4_DIR="$REPO_ROOT/px4"
 PX4_BUILD_DIR="$PX4_DIR/build/px4_sitl_default"
+QGC_DIR="$REPO_ROOT/qgroundcontrol"
+QGC_BUILD_DIR="$REPO_ROOT/build/qgc-simtest"
+QGC_ARTIFACT_DIR="$REPO_ROOT/artifacts/qgc"
+MANIFEST_PATH="$REPO_ROOT/tools/environment_manifest.json"
+QGC_STUB_HELPER="$SCRIPT_DIR/qgc_virtual_px4.py"
+
+qgc_install_dir() {
+  printf '%s\n' "${SIMTEST_QGC_INSTALL_DIR:-$QGC_BUILD_DIR/AppDir/usr}"
+}
+
+qgc_binary_path() {
+  local install_root
+  install_root=$(qgc_install_dir)
+  printf '%s/bin/QGroundControl' "$install_root"
+}
+
+resolve_absolute_path() {
+  python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).expanduser().resolve())
+PY
+}
 
 print_usage() {
   cat <<'USAGE'
-Usage: simtest [build|run|collect|doctor|all|--help]
+Usage: simtest [build|run|collect|all|qgc|--help]
   build     Build PX4, models, dependencies
   run       Run the Gazebo simulation
   collect   Fetch artifacts (logs, flight results)
-  doctor    Validate environment prerequisites
   all       Execute build + run + collect
+  qgc       QGroundControl build/test helpers
 USAGE
 }
 
 log() {
   printf '[simtest] %s\n' "$1"
+}
+
+qgc_usage() {
+  cat <<'USAGE'
+Usage: simtest qgc [build|test|stub|collect|all|--help]
+  build     Configure and build QGroundControl with tests enabled
+  test      Run ctest suite headlessly (xvfb when available)
+  stub      Launch QGC simple boot test and exercise virtual PX4 handshake
+  autoplan  Execute a mission file through QGroundControl headlessly
+  collect   List QGC-specific artifacts
+  all       build + test + stub + autoplan + collect in sequence
+USAGE
 }
 
 require_cmd() {
@@ -42,6 +77,322 @@ jobs_count() {
   else
     getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1
   fi
+}
+
+resolve_qt_root() {
+  if [ -n "${QT_ROOT_DIR:-}" ]; then
+    printf '%s\n' "$QT_ROOT_DIR"
+    return 0
+  fi
+
+  if [ ! -f "$MANIFEST_PATH" ]; then
+    return 1
+  fi
+
+  python3 - "$MANIFEST_PATH" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+data = json.load(manifest_path.open('r', encoding='utf-8'))
+qt = data.get('qt', {})
+version = qt.get('version')
+arch = qt.get('arch', 'gcc_64')
+install_dir = Path(os.path.expanduser(qt.get('install_dir', '~/Qt')))
+if not version:
+    raise SystemExit(1)
+print(install_dir.resolve() / version / arch)
+PY
+}
+
+qgc_configure() {
+  if [ ! -d "$QGC_DIR" ]; then
+    log "error: QGroundControl directory not found at $QGC_DIR/"
+    exit 1
+  fi
+
+  require_cmd python3
+  require_cmd ninja
+
+  if ! qt_root=$(resolve_qt_root); then
+    log "error: unable to resolve Qt root from manifest"
+    exit 1
+  fi
+
+  QT_ROOT_DIR=${QT_ROOT_DIR:-$qt_root}
+  qt_cmake="$QT_ROOT_DIR/bin/qt-cmake"
+  if [ ! -x "$qt_cmake" ]; then
+    log "error: qt-cmake not found at $qt_cmake"
+    exit 1
+  fi
+
+  mkdir -p "$QGC_BUILD_DIR"
+
+  log "Configuring QGroundControl (Debug, tests enabled)"
+  "$qt_cmake" \
+    -S "$QGC_DIR" \
+    -B "$QGC_BUILD_DIR" \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE="${QGC_BUILD_TYPE:-Debug}" \
+    -DQGC_BUILD_TESTING=ON \
+    -DQGC_STABLE_BUILD=OFF
+}
+
+qgc_build_target() {
+  target=$1
+  require_cmd cmake
+  jobs=$(jobs_count)
+  if [ -z "$jobs" ] || [ "$jobs" -lt 1 ]; then
+    jobs=1
+  fi
+
+  log "Building QGroundControl target '$target' with $jobs parallel jobs"
+  if [ "$target" = "package" ]; then
+    if ! APPIMAGE_EXTRACT_AND_RUN=1 LINUXDEPLOY_NO_FUSE=1 cmake --build "$QGC_BUILD_DIR" --target "$target" --parallel "$jobs"; then
+      log "error: cmake --build failed for target $target"
+      exit 1
+    fi
+  else
+    if ! cmake --build "$QGC_BUILD_DIR" --target "$target" --parallel "$jobs"; then
+      log "error: cmake --build failed for target $target"
+      exit 1
+    fi
+  fi
+}
+
+qgc_run_build() {
+  qgc_configure
+  qgc_build_target QGroundControl
+  local install_root
+  install_root=$(qgc_install_dir)
+  log "Installing QGroundControl to $install_root"
+  if [ -d "$install_root" ]; then
+    log "Removing existing contents at $install_root"
+    rm -rf "$install_root"
+  fi
+  mkdir -p "$install_root"
+  mkdir -p "$REPO_ROOT/AppDir"
+  rm -rf "$REPO_ROOT/AppDir/usr"
+  ln -sfn "$install_root" "$REPO_ROOT/AppDir/usr"
+  rm -f "$REPO_ROOT/AppRun"
+  ln -sfn "$QGC_BUILD_DIR/AppRun" "$REPO_ROOT/AppRun"
+  if ! APPIMAGE_EXTRACT_AND_RUN=1 LINUXDEPLOY_NO_FUSE=1 cmake --install "$QGC_BUILD_DIR" --prefix "$install_root"; then
+    log "error: cmake --install failed"
+    exit 1
+  fi
+  local binary
+  binary=$(qgc_binary_path)
+  if [ ! -x "$binary" ]; then
+    log "error: installed QGroundControl binary missing at $binary"
+    exit 1
+  fi
+}
+
+qgc_run_test() {
+  local binary
+  binary=$(qgc_binary_path)
+
+  if [ ! -x "$binary" ]; then
+    log "Installed QGroundControl binary missing, running build first"
+    qgc_run_build
+    binary=$(qgc_binary_path)
+  fi
+
+  require_cmd ctest
+
+  jobs=$(jobs_count)
+  if [ -z "$jobs" ] || [ "$jobs" -lt 1 ]; then
+    jobs=1
+  fi
+
+  mkdir -p "$QGC_ARTIFACT_DIR"
+
+  log "Running QGroundControl ctest suite against installed binary"
+  if command -v xvfb-run >/dev/null 2>&1; then
+    xvfb-run -a ctest --test-dir "$QGC_BUILD_DIR" --output-on-failure -j "$jobs"
+  else
+    QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} ctest --test-dir "$QGC_BUILD_DIR" --output-on-failure -j "$jobs"
+  fi
+
+  log "Running QGroundControl installed unittest harness"
+  if command -v xvfb-run >/dev/null 2>&1; then
+    if ! xvfb-run -a "$binary" --unittest >"$QGC_ARTIFACT_DIR/unittest.log" 2>&1; then
+      log "error: QGroundControl --unittest failed"
+      exit 1
+    fi
+  else
+    if ! QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} "$binary" --unittest >"$QGC_ARTIFACT_DIR/unittest.log" 2>&1; then
+      log "error: QGroundControl --unittest failed"
+      exit 1
+    fi
+  fi
+}
+
+qgc_run_stub() {
+  local binary
+  binary=$(qgc_binary_path)
+
+  if [ ! -x "$binary" ]; then
+    log "Installed QGroundControl binary missing, running build first"
+    qgc_run_build
+    binary=$(qgc_binary_path)
+  fi
+
+  if [ ! -f "$QGC_STUB_HELPER" ]; then
+    log "error: stub helper missing at $QGC_STUB_HELPER"
+    exit 1
+  fi
+
+  mkdir -p "$QGC_ARTIFACT_DIR"
+
+  qgc_log="$QGC_ARTIFACT_DIR/simple_boot.log"
+  stub_log="$QGC_ARTIFACT_DIR/virtual_px4.log"
+  : >"$qgc_log"
+  : >"$stub_log"
+
+  duration=${SIMTEST_QGC_STUB_DURATION:-25}
+
+  log "Starting QGroundControl headless session"
+  if command -v xvfb-run >/dev/null 2>&1; then
+    xvfb-run -a "$binary" --log-output --allow-multiple >"$qgc_log" 2>&1 &
+  else
+    QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} "$binary" --log-output --allow-multiple >"$qgc_log" 2>&1 &
+  fi
+  qgc_pid=$!
+
+  # Allow QGC to finish startup before the stub pushes telemetry.
+  sleep 4
+
+  stub_args=""
+  if [ "${SIMTEST_QGC_SKIP_PARAM_CHECK:-0}" = "1" ]; then
+    stub_args="--skip-param-check"
+  fi
+  if [ "${SIMTEST_QGC_SKIP_HEARTBEAT_CHECK:-0}" = "1" ]; then
+    stub_args="$stub_args --skip-heartbeat-check"
+  fi
+
+  if python3 "$QGC_STUB_HELPER" --duration "$duration" --log-file "$stub_log" $stub_args; then
+    log "Virtual PX4 stub completed"
+  else
+    status=$?
+    log "error: virtual PX4 stub failed (exit $status)"
+    kill "$qgc_pid" >/dev/null 2>&1 || true
+    wait "$qgc_pid" >/dev/null 2>&1 || true
+    exit $status
+  fi
+
+  kill "$qgc_pid" >/dev/null 2>&1 || true
+  wait "$qgc_pid" >/dev/null 2>&1 || true
+}
+
+qgc_run_autoplan() {
+  local binary
+  binary=$(qgc_binary_path)
+
+  if [ ! -x "$binary" ]; then
+    log "Installed QGroundControl binary missing, running build first"
+    qgc_run_build
+    binary=$(qgc_binary_path)
+  fi
+
+  require_cmd python3
+  require_cmd timeout
+
+  local plan_input
+  plan_input=${SIMTEST_QGC_PLAN:-$REPO_ROOT/tests/qgc_plans/takeoff_land.plan}
+  local plan_path
+  plan_path=$(resolve_absolute_path "$plan_input")
+
+  if [ ! -f "$plan_path" ]; then
+    log "error: mission plan not found at $plan_path"
+    exit 1
+  fi
+
+  mkdir -p "$QGC_ARTIFACT_DIR"
+
+  local autoplan_log
+  autoplan_log="$QGC_ARTIFACT_DIR/auto_plan.log"
+  : >"$autoplan_log"
+
+  local autoplan_timeout
+  autoplan_timeout=${SIMTEST_QGC_PLAN_TIMEOUT:-180}
+
+  set -- --log-output --allow-multiple --auto-fly-plan "$plan_path"
+  if [ -n "${SIMTEST_QGC_EXTRA_ARGS:-}" ]; then
+    for word in $SIMTEST_QGC_EXTRA_ARGS; do
+      set -- "$@" "$word"
+    done
+  fi
+
+  log "Running QGroundControl headless mission for $plan_path"
+  if command -v xvfb-run >/dev/null 2>&1; then
+    if ! timeout --foreground "$autoplan_timeout" xvfb-run -a "$binary" "$@" >"$autoplan_log" 2>&1; then
+      log "error: QGroundControl headless mission failed"
+      exit 1
+    fi
+  else
+    if ! QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} timeout --foreground "$autoplan_timeout" "$binary" "$@" >"$autoplan_log" 2>&1; then
+      log "error: QGroundControl headless mission failed"
+      exit 1
+    fi
+  fi
+}
+
+qgc_collect() {
+  if [ ! -d "$QGC_ARTIFACT_DIR" ]; then
+    log "warning: QGC artifact directory not found at $QGC_ARTIFACT_DIR/"
+    return
+  fi
+
+  log "QGC artifacts located in $QGC_ARTIFACT_DIR/"
+  if ls -A "$QGC_ARTIFACT_DIR" >/dev/null 2>&1; then
+    ls "$QGC_ARTIFACT_DIR" | sed 's/^/[simtest]   /'
+  else
+    log "  (empty)"
+  fi
+}
+
+qgc_run_all() {
+  qgc_run_build
+  qgc_run_test
+  qgc_run_stub
+  qgc_run_autoplan
+  qgc_collect
+}
+
+dispatch_qgc() {
+  sub=${1-}
+
+  case "$sub" in
+    build)
+      qgc_run_build
+      ;;
+    test)
+      qgc_run_test
+      ;;
+    stub)
+      qgc_run_stub
+      ;;
+    autoplan)
+      qgc_run_autoplan
+      ;;
+    collect)
+      qgc_collect
+      ;;
+    all)
+      qgc_run_all
+      ;;
+    -h|--help|"")
+      qgc_usage
+      ;;
+    *)
+      printf '[simtest] error: unknown qgc subcommand %s\n' "$sub" 1>&2
+      qgc_usage 1>&2
+      exit 1
+      ;;
+  esac
 }
 
 run_build() {
@@ -216,11 +567,6 @@ run_run() {
     dest="$ARTIFACT_DIR/$(basename "$latest_log")"
     if cp "$latest_log" "$dest" 2>/dev/null; then
       log "PX4 log archived to $dest"
-      if cp "$dest" "$ARTIFACT_DIR/latest_sitl.ulg" 2>/dev/null; then
-        log "PX4 canonical log updated at $ARTIFACT_DIR/latest_sitl.ulg"
-      else
-        log "warning: unable to refresh canonical log at $ARTIFACT_DIR/latest_sitl.ulg"
-      fi
     else
       log "warning: unable to copy PX4 log from $latest_log"
     fi
@@ -243,17 +589,6 @@ run_collect() {
   fi
 }
 
-run_doctor() {
-  require_cmd python3
-
-  if python3 "$SCRIPT_DIR/env_requirements.py" check; then
-    log "doctor checks passed"
-  else
-    log "error: environment diagnostics failed"
-    exit 1
-  fi
-}
-
 run_all() {
   run_build
   run_run
@@ -273,11 +608,12 @@ main() {
     collect)
       run_collect
       ;;
-    doctor)
-      run_doctor
-      ;;
     all)
       run_all
+      ;;
+    qgc)
+      shift || true
+      dispatch_qgc "$@"
       ;;
     -h|--help)
       print_usage

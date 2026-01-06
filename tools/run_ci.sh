@@ -14,14 +14,16 @@ run_inside_container() {
   local build_log="${ARTIFACT_DIR}/simtest-build.log"
   local run_log="${ARTIFACT_DIR}/simtest-run.log"
   local report_file="${ARTIFACT_DIR}/simtest-report.txt"
-  local doctor_log="${ARTIFACT_DIR}/simtest-doctor.log"
+  local qgc_build_log="${ARTIFACT_DIR}/qgc-build.log"
+  local qgc_test_log="${ARTIFACT_DIR}/qgc-test.log"
+  local qgc_stub_log="${ARTIFACT_DIR}/qgc-stub.log"
 
   : >"${build_log}"
   : >"${run_log}"
   : >"${report_file}"
-  : >"${doctor_log}"
-
-  ./tools/simtest doctor 2>&1 | tee "${doctor_log}"
+  : >"${qgc_build_log}"
+  : >"${qgc_test_log}"
+  : >"${qgc_stub_log}"
 
   local build_start
   local build_end
@@ -36,28 +38,42 @@ run_inside_container() {
   SIM_DURATION="${SIM_DURATION:-45}" ./tools/simtest run 2>&1 | tee "${run_log}"
   run_end=$(date +%s)
 
-  local canonical_log="${ARTIFACT_DIR}/latest_sitl.ulg"
-  local fallback_log
-  fallback_log=$(ls -1t "${ARTIFACT_DIR}"/*.ulg 2>/dev/null | head -n1 || true)
-  local summary_json="${ARTIFACT_DIR}/takeoff_land_summary.json"
-  local report_html="${ARTIFACT_DIR}/flight_report.html"
-
-  if [[ ! -f "${canonical_log}" && -n "${fallback_log}" && -f "${fallback_log}" ]]; then
-    cp "${fallback_log}" "${canonical_log}" 2>/dev/null || true
-  fi
-
-  if [[ -f "${canonical_log}" && -f "${summary_json}" ]]; then
-    python3 "${REPO_ROOT}/tools/generate_flight_report.py" "${canonical_log}" \
-      --summary "${summary_json}" \
-      --output "${report_html}"
-  else
-    echo "warning: skipping flight report generation (missing log or summary)" | tee -a "${report_file}"
-  fi
-
   {
     printf 'build_seconds=%s\n' "$((build_end - build_start))"
     printf 'run_seconds=%s\n' "$((run_end - run_start))"
-  } | tee "${report_file}"
+  } | tee -a "${report_file}"
+
+  if [[ "${SIMTEST_ENABLE_QGC:-0}" == "1" ]]; then
+    local qgc_build_start
+    local qgc_build_end
+    local qgc_test_start
+    local qgc_test_end
+    local qgc_stub_start
+    local qgc_stub_end
+
+    qgc_build_start=$(date +%s)
+    ./tools/simtest qgc build 2>&1 | tee "${qgc_build_log}"
+    qgc_build_end=$(date +%s)
+
+    qgc_test_start=$(date +%s)
+    ./tools/simtest qgc test 2>&1 | tee "${qgc_test_log}"
+    qgc_test_end=$(date +%s)
+
+    export SIMTEST_QGC_SKIP_PARAM_CHECK="${SIMTEST_QGC_SKIP_PARAM_CHECK:-1}"
+    export SIMTEST_QGC_SKIP_HEARTBEAT_CHECK="${SIMTEST_QGC_SKIP_HEARTBEAT_CHECK:-1}"
+
+    qgc_stub_start=$(date +%s)
+    ./tools/simtest qgc stub 2>&1 | tee "${qgc_stub_log}"
+    qgc_stub_end=$(date +%s)
+
+    ./tools/simtest qgc collect >>"${qgc_stub_log}" 2>&1 || true
+
+    {
+      printf 'qgc_build_seconds=%s\n' "$((qgc_build_end - qgc_build_start))"
+      printf 'qgc_test_seconds=%s\n' "$((qgc_test_end - qgc_test_start))"
+      printf 'qgc_stub_seconds=%s\n' "$((qgc_stub_end - qgc_stub_start))"
+    } | tee -a "${report_file}"
+  fi
 }
 
 if [[ "${INSIDE_FLAG}" != "--inside-devcontainer" ]]; then

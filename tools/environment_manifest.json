@@ -5,7 +5,9 @@
     "python3",
     "pip3",
     "gz",
-    "timeout"
+    "timeout",
+    "xvfb-run",
+    "aqt"
   ],
   "paths": [
     "px4",
@@ -19,7 +21,8 @@
     "ccache",
     "python3-pip",
     "python3-venv",
-    "rsync"
+    "rsync",
+    "xvfb"
   ],
   "pip_packages": [
     "pip",
@@ -32,15 +35,41 @@
     "pymavlink==2.4.49",
     "beautifulsoup4==4.12.3",
     "plotly==5.24.1",
-    "pyulog==0.9.0"
+    "pyulog==0.9.0",
+    "aqtinstall"
   ],
   "python_modules": [
     "pymavlink",
     "pyulog",
     "bs4",
-    "plotly"
+    "plotly",
+    "aqt"
   ],
   "scripts": [
-    "px4/Tools/setup/ubuntu.sh --no-nuttx"
-  ]
+    "px4/Tools/setup/ubuntu.sh --no-nuttx",
+    "sudo qgroundcontrol/tools/setup/install-dependencies-debian.sh"
+  ],
+  "qt": {
+    "version": "6.10.1",
+    "host": "linux",
+    "target": "desktop",
+    "arch": "gcc_64",
+    "installer_arch": "linux_gcc_64",
+    "modules": [
+      "qtcharts",
+      "qtlocation",
+      "qtpositioning",
+      "qtspeech",
+      "qt5compat",
+      "qtmultimedia",
+      "qtserialport",
+      "qtimageformats",
+      "qtshadertools",
+      "qtconnectivity",
+      "qtquick3d",
+      "qtsensors",
+      "qtscxml"
+    ],
+    "install_dir": "~/.local/Qt"
+  }
 }
