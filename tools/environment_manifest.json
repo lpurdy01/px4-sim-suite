@@ -1,0 +1,75 @@
+{
+  "commands": [
+    "cmake",
+    "make",
+    "python3",
+    "pip3",
+    "gz",
+    "timeout",
+    "xvfb-run",
+    "aqt"
+  ],
+  "paths": [
+    "px4",
+    "px4-gazebo-models",
+    "tests/scenarios"
+  ],
+  "apt_packages": [
+    "build-essential",
+    "cmake",
+    "ninja-build",
+    "ccache",
+    "python3-pip",
+    "python3-venv",
+    "rsync",
+    "xvfb"
+  ],
+  "pip_packages": [
+    "pip",
+    "empy==3.3.4",
+    "jinja2",
+    "kconfiglib",
+    "pyros-genmsg",
+    "pyyaml",
+    "jsonschema",
+    "pymavlink==2.4.49",
+    "beautifulsoup4==4.12.3",
+    "plotly==5.24.1",
+    "pyulog==0.9.0",
+    "aqtinstall"
+  ],
+  "python_modules": [
+    "pymavlink",
+    "pyulog",
+    "bs4",
+    "plotly",
+    "aqt"
+  ],
+  "scripts": [
+    "px4/Tools/setup/ubuntu.sh --no-nuttx",
+    "sudo qgroundcontrol/tools/setup/install-dependencies-debian.sh"
+  ],
+  "qt": {
+    "version": "6.10.1",
+    "host": "linux",
+    "target": "desktop",
+    "arch": "gcc_64",
+    "installer_arch": "linux_gcc_64",
+    "modules": [
+      "qtcharts",
+      "qtlocation",
+      "qtpositioning",
+      "qtspeech",
+      "qt5compat",
+      "qtmultimedia",
+      "qtserialport",
+      "qtimageformats",
+      "qtshadertools",
+      "qtconnectivity",
+      "qtquick3d",
+      "qtsensors",
+      "qtscxml"
+    ],
+    "install_dir": "~/.local/Qt"
+  }
+}

@@ -35,7 +35,7 @@ All workflows must assume **the weakest agent** by default.
 
 ## 2. Submodules: rules and reality
 
-This repo uses git submodules for PX4, QGroundControl, and Gazebo models.
+This repo uses git submodules for PX4, QGroundControl, and Gazebo models. All three point to forks maintained under the lpurdy01 GitHub account; treat those remotes as authoritative unless the human owner directs otherwise.
 
 ### Important facts agents must understand
 
@@ -65,6 +65,14 @@ Agents may directly edit and commit:
 - CI logic (when present)
 
 Agents should prefer **minimal, local changes**.
+
+### Shared environment manifest
+
+- The single source of truth for host dependencies is `tools/environment_manifest.json`.
+- The helper `tools/env_requirements.py` reads that manifest to install (`install`) or validate (`check`) tooling.
+- `simtest doctor` simply runs the `check` action; update the manifest first, then rerun the command when new prerequisites are needed.
+- The devcontainer post-create hook also calls the helper, so any manifest edits automatically flow into local and CI containers.
+- Do **not** hard-code additional dependency lists in other scripts; reference or extend the manifest instead.
 
 ---
 

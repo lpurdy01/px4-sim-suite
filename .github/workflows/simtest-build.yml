@@ -6,6 +6,8 @@ on:
 jobs:
   simtest-build:
     runs-on: ubuntu-24.04
+    env:
+      SIMTEST_ENABLE_QGC: ${{ vars.SIMTEST_ENABLE_QGC || '0' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,6 +21,7 @@ jobs:
           workspaceFolder: /workspaces/${{ github.event.repository.name }}
           runCmd: |
             set -euo pipefail
+            export SIMTEST_ENABLE_QGC=1
             ./tools/run_ci.sh --inside-devcontainer
 
       - name: Upload build artifacts

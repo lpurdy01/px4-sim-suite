@@ -1,0 +1,18 @@
+# Ignore generated simulation artifacts
+artifacts/
+
+# Ignore local build outputs
+build/
+
+# Ignore AppImage packaging artifacts
+AppDir/
+AppRun
+QGroundControl-*.AppImage
+aqtinstall.log
+
+# Ignore tool downloads and transient manifests
+tools/appimagelint-*.AppImage
+tools/appimagetool-*.AppImage
+tools/linuxdeploy-*.AppImage
+manifest.json
+handoff_summary.md

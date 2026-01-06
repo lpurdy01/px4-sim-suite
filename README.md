@@ -190,7 +190,8 @@ The `run` subcommand now launches a **headless** PX4 SITL + Gazebo Harmonic sess
 * Ensures the PX4 build exists (invokes `build` automatically if missing)
 * Uses the modern Gazebo Harmonic (`gz` CLI) flow, invoking `make px4_sitl gz_<model>` from `px4/`
 * Defaults to the `x500` quadrotor (override with `PX4_SIM_MODEL`) and extends `PX4_GZ_MODEL_PATH`/`GZ_SIM_RESOURCE_PATH` with `px4-gazebo-models`
-* Runs for a bounded duration (`SIM_DURATION` seconds; defaults to 20) before shutting down
+* Runs for a bounded duration (`SIM_DURATION` seconds; defaults to 45) before shutting down
+* Executes the default Stage 5 scenario (`tests/scenarios/takeoff_land.py`) that arms, climbs to ~3 m, holds briefly, and lands via MAVLink commands
 
 You can customize the duration or model:
 
@@ -200,7 +201,27 @@ SIM_DURATION=30 PX4_SIM_MODEL=x500 sh tools/simtest run
 
 Use `sh tools/simtest all` to run both build and simulation in sequence.
 
+If you want to disable automated flight control (for interactive debugging or manual testing), set `SIMTEST_SCENARIO=none` before invoking `simtest run`. To plug in a different scripted mission, drop a Python helper under `tests/scenarios/` and set `SIMTEST_SCENARIO=<name>`.
+
+Each run persists its telemetry and summary artifacts under `artifacts/` (override with `SIMTEST_ARTIFACT_DIR`):
+
+* `takeoff_land.log` — live scenario transcript (arm, hover, land events)
+* `takeoff_land_summary.json` — hover/landing metrics in JSON
+* `<timestamp>.ulg` — copy of the most recent PX4 flight log for post-flight analysis
+
+Use `sh tools/simtest collect` to list the files produced in the selected artifact directory.
+
 The `run` flow launches a lightweight MAVLink heartbeat helper implemented with `pymavlink` so PX4 no longer reports a missing GCS on startup. The dev container installs this dependency automatically; native environments should ensure `pymavlink` is available (for example via `pip install --user pymavlink`).
+
+### QGroundControl automation (optional)
+
+`tools/simtest` also provides a Stage 8 scaffold for exercising QGroundControl without leaving the repo:
+
+- `sh tools/simtest qgc build` configures QGC with `QGC_BUILD_TESTING=ON` by invoking the Qt toolchain declared in `tools/environment_manifest.json` and produces both the desktop binary and AppImage target inside `build/qgc-simtest/`.
+- `sh tools/simtest qgc test` runs the CTest suite headlessly (`xvfb-run` when available, otherwise `QT_QPA_PLATFORM=offscreen`).
+- `sh tools/simtest qgc stub` launches the `--simple-boot-test` flow under Xvfb (if present) and drives a small MAVLink stub defined in `tools/qgc_virtual_px4.py`; artifacts are written to `artifacts/qgc/`.
+- `SIMTEST_ENABLE_QGC=1 ./tools/run_ci.sh --inside-devcontainer` (or the matching GitHub Actions variable) enables the same steps in CI, appending timing data to `artifacts/simtest-report.txt` alongside dedicated QGC logs.
+	- Set `SIMTEST_QGC_SKIP_PARAM_CHECK=1` when you need the stub to succeed without a parameter request (useful for ad-hoc debugging).
 
 ## Development container and CI build flow
 
