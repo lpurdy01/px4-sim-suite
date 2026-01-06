@@ -21,6 +21,7 @@ jobs:
           workspaceFolder: /workspaces/${{ github.event.repository.name }}
           runCmd: |
             set -euo pipefail
+            export SIMTEST_ENABLE_QGC=1
             ./tools/run_ci.sh --inside-devcontainer
 
       - name: Upload build artifacts
