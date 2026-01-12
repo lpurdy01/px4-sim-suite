@@ -1,0 +1,20 @@
+name: dual_chinook_throttle_step
+sample_rate_hz: 200
+phases:
+  - type: ramp
+    start_time: 0.0
+    end_time: 3.0
+    start_throttle: 0.0
+    end_throttle: 0.62
+  - type: hold
+    start_time: 3.0
+    end_time: 8.0
+    throttle: 0.62
+  - type: ramp
+    start_time: 8.0
+    end_time: 10.0
+    start_throttle: 0.62
+    end_throttle: 0.0
+metadata:
+  description: "Throttle-up, hover hold, and shutdown for the dual Chinook analytic demo"
+  expected_hover_altitude_range_m: [1.5, 2.5]

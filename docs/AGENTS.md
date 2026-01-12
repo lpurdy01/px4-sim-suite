@@ -11,6 +11,8 @@ See the repository-level `AGENTS.md` at the repository root for:
 * Binary artifact policies
 * Contribution guidelines
 
+**Environment note:** the devcontainer already provisions Python tooling. Do **not** spin up per-task virtual environments; use the shared interpreter and add dependencies through `tools/environment_manifest.json` when necessary so documentation and scripts remain reproducible.
+
 ## MVP development stages
 
 For staged development planning and execution:

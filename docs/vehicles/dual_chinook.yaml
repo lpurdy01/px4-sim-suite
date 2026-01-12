@@ -1,0 +1,57 @@
+schema_version: 0.1
+name: dual_chinook
+summary: Tandem-rotor concept with symmetric lift fans and auxiliary effectors disabled.
+notes:
+  - Counter-rotating rotors cancel net yaw torque.
+  - Rotor hubs are spaced 2.0 m apart (roughly 2.5x rotor diameter) to minimize aerodynamic interference.
+  - Descriptor drives both analytic simulations and future Gazebo template generation.
+mass_properties:
+  mass: 8.0             # kilograms — reduced to match available thrust
+  inertia:              # kg*m^2 (principal moments about CG)
+    ixx: 1.6
+    iyy: 2.7333
+    izz: 2.1333
+  cg: [0.0, 0.0, 0.35]  # meters relative to body origin
+point_masses:
+  - name: forward_boom
+    mass: 1.0
+    position: [-0.9, 0.0, 0.3]
+  - name: aft_boom
+    mass: 1.0
+    position: [0.9, 0.0, 0.3]
+rotors:
+  - name: fore
+    position: [-1.0, 0.0, 0.4]
+    axis: [0.0, 0.0, 1.0]
+    diameter: 0.78
+    spin: ccw
+    max_rot_speed: 1600.0        # rad/s
+    thrust_coefficient: 6.4e-05  # N/(rad/s)^2
+    moment_coefficient: 0.02
+    time_constant: 0.25          # seconds
+  - name: aft
+    position: [1.0, 0.0, 0.4]
+    axis: [0.0, 0.0, 1.0]
+    diameter: 0.78
+    spin: cw
+    max_rot_speed: 1600.0
+    thrust_coefficient: 6.4e-05
+    moment_coefficient: 0.02
+    time_constant: 0.25
+trim:
+  hover_throttle: 0.5
+  initial_position: [0.0, 0.0, 0.0]
+  initial_velocity: [0.0, 0.0, 0.0]
+aerodynamics:
+  axial_drag_coefficient: 1.8
+  reference_area: 0.9
+  air_density: 1.204
+logging:
+  default_sample_rate_hz: 200
+  channels:
+    - name: altitude
+      description: Vertical position of CG in meters (up positive)
+    - name: vertical_velocity
+      description: First derivative of altitude
+    - name: rotor_speed
+      description: Individual rotor angular rates in rad/s

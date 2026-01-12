@@ -73,6 +73,7 @@ Agents should prefer **minimal, local changes**.
 - `simtest doctor` simply runs the `check` action; update the manifest first, then rerun the command when new prerequisites are needed.
 - The devcontainer post-create hook also calls the helper, so any manifest edits automatically flow into local and CI containers.
 - Do **not** hard-code additional dependency lists in other scripts; reference or extend the manifest instead.
+- All development occurs inside the repository devcontainer; do **not** create ad-hoc Python virtual environments. Install new Python packages via `pip3` in the shared environment (or add them to `tools/environment_manifest.json`) so every agent shares identical tooling.
 
 ---
 
