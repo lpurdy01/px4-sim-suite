@@ -262,3 +262,184 @@ For overall project intent and structure, see:
 For upstream project context, see:
 
 * PX4 documentation: [https://docs.px4.io/main/en/simulation/](https://docs.px4.io/main/en/simulation/)
+
+---
+
+## 12. GUI Simulation and Manual Control
+
+This repository now supports visual simulation and manual control workflows in addition to headless CI testing.
+
+### Available Modes
+
+1. **Headless Automated** (CI/CD) - `./tools/simtest run`
+   - Used by GitHub Actions
+   - No GUI, fully automated
+   - Minimal resource usage
+
+2. **GUI with Automated Scenario** - `./tools/run_sim_with_gui.sh`
+   - Visible Gazebo window
+   - Automated flight test (takeoff_land by default)
+   - Useful for visual verification of test scenarios
+
+3. **GUI with Manual Control** - `./tools/run_sim_with_qgc.sh`
+   - Visible Gazebo + QGroundControl
+   - User flies manually with virtual joystick
+   - Configurable world environments (lawn, baylands, etc.)
+
+### Documentation
+
+Detailed documentation for these tools is in:
+- `tools/AGENTS.md` - Script reference and common workflows
+- `tools/GAZEBO_WORLDS.md` - Available world environments
+- `tools/setup_virtual_joystick.md` - QGC virtual joystick setup
+
+### CI/CD Impact
+
+The new GUI tools do NOT affect the CI/CD pipeline:
+- GitHub Actions continues to use `./tools/simtest run`
+- GUI scripts are development/testing tools only
+- No changes to `.github/workflows/` are required
+
+
+---
+
+## 13. DevContainer Variants and Environment Setup
+
+This repository provides **two devcontainer configurations** with different capabilities but shared installation infrastructure.
+
+### Default DevContainer (`.devcontainer/devcontainer.json`)
+
+**Agent considerations:**
+- Use this for headless automation, CI/CD, and command-line workflows
+- No GUI support - X11/Wayland display not available
+- Minimal resource footprint
+- Used by GitHub Actions
+
+**When agents should recommend this:**
+- User needs CI/CD compatible environment
+- User wants headless testing
+- User works in GitHub Codespaces without GUI
+- Resource constraints (no X server needed)
+
+**Scripts that work:**
+- `./tools/simtest run` (headless)
+- Any command-line workflow
+- Background simulation without display
+
+### WSL GUI DevContainer (`.devcontainer/wsl-gui/devcontainer.json`)
+
+**Agent considerations:**
+- Use this for visual simulation and interactive GUI workflows
+- X11/Wayland forwarding enabled via WSLg
+- Host networking for display access
+- Larger resource footprint (X server + GUI apps)
+
+**When agents should recommend this:**
+- User wants to see Gazebo GUI
+- User wants to use QGroundControl
+- User needs visual debugging
+- User is on Windows WSL2 with WSLg
+
+**Scripts that work:**
+- Everything from default devcontainer, PLUS:
+- `./tools/run_sim_with_gui.sh` (visible Gazebo)
+- `./tools/run_sim_with_qgc.sh` (Gazebo + QGC)
+- `./tools/launch_qgc.sh` (QGroundControl)
+
+### Shared Installation Infrastructure
+
+**IMPORTANT for agents:** Both devcontainers use identical installation logic:
+
+1. **Manifest:** `tools/environment_manifest.json`
+   - Single source of truth for all dependencies
+   - Defines versions, packages, Python requirements
+   - **Do NOT** create duplicate dependency lists
+
+2. **Installation script:** `tools/env_requirements.py`
+   - Reads manifest
+   - Installs system packages via apt
+   - Installs Python packages via pip
+   - Validates environment with `check` command
+
+3. **PX4 setup:** `px4/Tools/setup/ubuntu.sh --no-nuttx`
+   - Installs Gazebo Harmonic, MAVLink, etc.
+   - Vendor-maintained by PX4 project
+   - **Do NOT** duplicate this logic
+
+**Divergence points (only two):**
+
+1. **Docker mounts:** WSL GUI adds:
+   ```json
+   "mounts": [
+     "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+     "source=/mnt/wslg,target=/mnt/wslg,type=bind"
+   ]
+   ```
+
+2. **Environment variables:** WSL GUI adds:
+   ```json
+   "containerEnv": {
+     "DISPLAY": ":0",
+     "WAYLAND_DISPLAY": "wayland-0",
+     "XDG_RUNTIME_DIR": "/mnt/wslg/runtime-dir",
+     "PULSE_SERVER": "/mnt/wslg/PulseServer"
+   }
+   ```
+
+**Everything else is identical.**
+
+### Agent Decision Matrix
+
+When a user reports an error:
+
+| Error Message | Likely Cause | Recommendation |
+|--------------|--------------|----------------|
+| `cannot open display: :0` | Using default devcontainer | Switch to WSL GUI devcontainer |
+| `Error: no DISPLAY variable set` | Using default devcontainer | Switch to WSL GUI devcontainer |
+| `QGroundControl won't start` | Using default devcontainer | Switch to WSL GUI devcontainer |
+| `Gazebo GUI blank/frozen` | Display forwarding issue | Check WSLg installation, verify DISPLAY set |
+| Package not found | Manifest out of sync | Update `tools/environment_manifest.json` |
+
+### Adding New Dependencies (Agent Workflow)
+
+**Correct approach:**
+1. Add package to `tools/environment_manifest.json`
+2. Rebuild devcontainer (post-create hook runs automatically)
+3. Users get new dependency transparently
+
+**Incorrect approach (DO NOT DO THIS):**
+- ❌ Add `apt-get install` to random scripts
+- ❌ Add `pip install` to individual tools
+- ❌ Create new installation scripts
+- ❌ Modify devcontainer.json postCreateCommand
+
+**Why:** Single source of truth prevents drift between:
+- Local development
+- CI/CD (GitHub Actions)
+- Multiple devcontainer variants
+- Documentation vs reality
+
+### Recommending the Right DevContainer
+
+When a user asks for help:
+
+**User says:** "I want to see the drone flying"
+**Agent recommends:** WSL GUI devcontainer + `./tools/run_sim_with_gui.sh`
+
+**User says:** "Run automated tests"
+**Agent recommends:** Default devcontainer + `./tools/simtest run`
+
+**User says:** "Can I control the drone manually?"
+**Agent recommends:** WSL GUI devcontainer + `./tools/run_sim_with_qgc.sh`
+
+**User says:** "CI is failing"
+**Agent checks:** Default devcontainer compatibility (CI uses this)
+
+### Cross-Reference
+
+For detailed devcontainer documentation:
+- `README.md` - Section "DevContainer Variants"
+- `tools/AGENTS.md` - Script compatibility with each devcontainer
+- `tools/environment_manifest.json` - Dependency definitions
+- `tools/env_requirements.py` - Installation and validation logic
+
