@@ -9,11 +9,130 @@ This repository demonstrates how to:
 - Test everything through **automated mission scenarios** in simulation
 - Maintain **software CI/CD across the entire development stack**
 
+**Key Capabilities:**
+
+- **Infrastructure as Code**: Container-based development environments (DevContainers) with dependency management
+- **Simulation First**: Test flight behavior before hardware exists
+- **Mission-Based Testing**: Define scenarios as code (`tests/scenarios/`), validate automatically
+- **Hybrid Workflows**: CLI for automation, GUI for visual debugging and manual control
+- **Full Stack Integration**: From firmware to ground station, tested together
+- **Continuous Validation**: Every code change triggers automated flight tests
+
+
 ---
 
 ## Development Workflow
 
-This diagram illustrates the complete custom UAV development lifecycle enabled by this infrastructure:
+### Workflow Diagrams
+
+The following diagrams break down the custom UAV development lifecycle into focused views suitable for presentation:
+
+#### 1. High-Level Workflow Overview
+
+This diagram shows the main phases of the development lifecycle:
+
+```mermaid
+graph LR
+    Start[🚀 Fork px4-sim-suite] --> Develop[📐 Development Phase]
+    Develop --> CI[🔄 CI/CD Pipeline]
+    CI --> Local[💻 Local Testing & Iteration]
+    Local -.iterate.-> Develop
+    CI --> Deploy[🎯 Deployment Ready]
+
+    style Start fill:#4a9eff,stroke:#2d5f99,color:#fff
+    style Develop fill:#f9f,stroke:#d0d,color:#000
+    style CI fill:#9f9,stroke:#0a0,color:#000
+    style Local fill:#ff9,stroke:#990,color:#000
+    style Deploy fill:#f99,stroke:#900,color:#fff
+```
+
+#### 2. Development Phase Detail
+
+This diagram shows the parallel development streams for custom UAV projects:
+
+```mermaid
+graph TB
+    Model[📐 Design Custom Aircraft<br/>• Novel propeller layout<br/>• Custom powertrain<br/>• Unique airframe geometry]
+
+    GazeboModel[🎨 Gazebo Simulation Model<br/>• SDF/URDF definition<br/>• Physics properties<br/>• Visual meshes]
+
+    PX4Custom[⚙️ PX4 Firmware Customization<br/>• Mixer configuration<br/>• Flight controller logic<br/>• Parameter definitions<br/>• Sensor integrations]
+
+    QGCCustom[🖥️ QGroundControl Extensions<br/>• Custom UI widgets<br/>• Vehicle-specific parameters<br/>• Telemetry displays<br/>• Mission planning features]
+
+    TestScenarios[📝 Test Scenarios<br/>tests/scenarios/<br/>• Takeoff/landing<br/>• Hover stability<br/>• Waypoint missions<br/>• Failure modes]
+
+    Model --> GazeboModel
+    Model --> PX4Custom
+    Model --> QGCCustom
+    GazeboModel --> TestScenarios
+    PX4Custom --> TestScenarios
+    QGCCustom --> TestScenarios
+
+    style Model fill:#64b5f6,stroke:#1976d2,color:#000
+    style GazeboModel fill:#ffb74d,stroke:#e65100,color:#000
+    style PX4Custom fill:#ba68c8,stroke:#4a148c,color:#000
+    style QGCCustom fill:#81c784,stroke:#1b5e20,color:#000
+    style TestScenarios fill:#fff176,stroke:#f57f00,color:#000
+```
+
+#### 3. CI/CD Pipeline
+
+This diagram shows the automated testing pipeline that runs on every commit:
+
+```mermaid
+graph TB
+    Commit[git push] --> GHActions[GitHub Actions Trigger]
+
+    GHActions --> Build[🔨 Build Phase<br/>• Compile PX4 firmware<br/>• Build QGC binary<br/>• Validate models]
+
+    Build --> Sim[🎮 Simulation Phase<br/>• Headless Gazebo<br/>• Launch custom aircraft<br/>• Run test scenarios]
+
+    Sim --> Validate[✅ Validation<br/>• Flight logs analysis<br/>• Mission success criteria<br/>• Performance metrics]
+
+    Validate --> Artifacts[📦 Artifacts<br/>• ULog files<br/>• Test reports<br/>• Build binaries]
+
+    Artifacts --> Pass{Tests Pass?}
+    Pass -->|Yes| Success[✅ CI Success]
+    Pass -->|No| Fail[❌ CI Failure]
+
+    style Build fill:#64b5f6,stroke:#0d47a1,color:#000
+    style Sim fill:#81c784,stroke:#1b5e20,color:#000
+    style Validate fill:#fff176,stroke:#f57f00,color:#000
+    style Artifacts fill:#dce775,stroke:#827717,color:#000
+    style Success fill:#66bb6a,stroke:#1b5e20,color:#000
+    style Fail fill:#ef5350,stroke:#b71c1c,color:#fff
+```
+
+#### 4. Local Development Workflows
+
+This diagram shows the different modes for local testing and debugging:
+
+```mermaid
+graph TB
+    Dev[Developer Workstation] --> Choice{Choose Testing Mode}
+
+    Choice --> CLI[🖥️ Headless CLI Testing<br/>./tools/simtest run<br/><br/>Default DevContainer<br/>• Fast automated testing<br/>• CI-equivalent environment<br/>• No GUI overhead]
+
+    Choice --> GUI[🎮 Visual Debugging<br/>./tools/run_sim_with_gui.sh<br/><br/>WSL GUI DevContainer<br/>• See Gazebo simulation<br/>• Debug vehicle behavior<br/>• Automated scenarios with visuals]
+
+    Choice --> Manual[✈️ Manual Flying<br/>./tools/run_sim_with_qgc.sh<br/><br/>WSL GUI DevContainer<br/>• Full QGroundControl integration<br/>• Interactive mission planning<br/>• Manual flight testing]
+
+    CLI --> Iterate[Iterate on Design]
+    GUI --> Iterate
+    Manual --> Iterate
+
+    Iterate -.-> Dev
+
+    style CLI fill:#64b5f6,stroke:#0d47a1,color:#000
+    style GUI fill:#ffb74d,stroke:#e65100,color:#000
+    style Manual fill:#ba68c8,stroke:#4a148c,color:#000
+    style Iterate fill:#81c784,stroke:#1b5e20,color:#000
+```
+
+### Complete Development Workflow
+
+This comprehensive diagram illustrates the complete custom UAV development lifecycle enabled by this infrastructure:
 
 ```mermaid
 graph TB
@@ -83,15 +202,6 @@ graph TB
     style Local fill:#ff9,stroke:#990,color:#000
     style Deploy fill:#f99,stroke:#900,color:#fff
 ```
-
-**Key Capabilities:**
-
-- **Infrastructure as Code**: Container-based development environments (DevContainers) with dependency management
-- **Simulation First**: Test flight behavior before hardware exists
-- **Mission-Based Testing**: Define scenarios as code (`tests/scenarios/`), validate automatically
-- **Hybrid Workflows**: CLI for automation, GUI for visual debugging and manual control
-- **Full Stack Integration**: From firmware to ground station, tested together
-- **Continuous Validation**: Every code change triggers automated flight tests
 
 ---
 
