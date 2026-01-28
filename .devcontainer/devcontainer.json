@@ -14,12 +14,6 @@
       "ppa": false
     }
   },
-  "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached"
-  ],
-  "remoteEnv": {
-    "SSH_AUTH_SOCK": "${localEnv:SSH_AUTH_SOCK}"
-  },
   "updateContentCommand": "git submodule update --init --recursive",
   "postCreateCommand": "cd /workspaces/${localWorkspaceFolderBasename} && python3 tools/env_requirements.py install && cd /workspaces/${localWorkspaceFolderBasename}/px4 && bash Tools/setup/ubuntu.sh --no-nuttx",
   "customizations": {
