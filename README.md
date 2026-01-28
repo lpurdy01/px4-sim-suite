@@ -18,6 +18,13 @@ This repository demonstrates how to:
 - **Full Stack Integration**: From firmware to ground station, tested together
 - **Continuous Validation**: Every code change triggers automated flight tests
 
+### Quick Demo
+
+See the full development workflow in action (30-second time-lapse):
+
+https://github.com/user-attachments/assets/YOUR_VIDEO_ID_HERE
+
+> **Note:** Upload [`docs/images/Screen Recording 2026-01-19 145036_fast_30s.mp4`](docs/images/Screen%20Recording%202026-01-19%20145036_fast_30s.mp4) to GitHub releases or issues to get the proper video URL, then replace `YOUR_VIDEO_ID_HERE` above.
 
 ---
 
