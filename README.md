@@ -22,9 +22,7 @@ This repository demonstrates how to:
 
 See the full development workflow in action (30-second time-lapse):
 
-https://github.com/user-attachments/assets/YOUR_VIDEO_ID_HERE
-
-> **Note:** Upload [`docs/images/Screen Recording 2026-01-19 145036_fast_30s.mp4`](docs/images/Screen%20Recording%202026-01-19%20145036_fast_30s.mp4) to GitHub releases or issues to get the proper video URL, then replace `YOUR_VIDEO_ID_HERE` above.
+https://github.com/user-attachments/assets/794316d0-8449-4fe8-acc7-1faaeac2737a
 
 ---
 
