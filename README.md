@@ -1,19 +1,237 @@
 # px4-sim-suite
 
-A **simulation and development suite for PX4 firmware and custom aircraft**, designed to support:
+An **example infrastructure repository** for developing custom UAVs with **simulated mission-based CI/CD**.
 
-- PX4 firmware development and customization
-- Gazebo-based simulation (SITL)
-- Mission- and scenario-level testing
+This repository demonstrates how to:
+- Develop custom aircraft models (novel propeller configurations, powertrains, etc.)
+- Create custom PX4 firmware support for new vehicle types
+- Extend QGroundControl with custom GUI integrations
+- Test everything through **automated mission scenarios** in simulation
+- Maintain **software CI/CD across the entire development stack**
+
+**Key Capabilities:**
+
+- **Infrastructure as Code**: Container-based development environments (DevContainers) with dependency management
+- **Simulation First**: Test flight behavior before hardware exists
+- **Mission-Based Testing**: Define scenarios as code (`tests/scenarios/`), validate automatically
+- **Hybrid Workflows**: CLI for automation, GUI for visual debugging and manual control
+- **Full Stack Integration**: From firmware to ground station, tested together
+- **Continuous Validation**: Every code change triggers automated flight tests
+
+### Quick Demo
+
+GUI running in devcontainer: (30-second time-lapse):
+
+https://github.com/user-attachments/assets/794316d0-8449-4fe8-acc7-1faaeac2737a
+
+---
+
+## Development Workflow
+
+### Workflow Diagrams
+
+The following diagrams break down the custom UAV development lifecycle into focused views suitable for presentation:
+
+#### 1. High-Level Workflow Overview
+
+This diagram shows the main phases of the development lifecycle:
+
+```mermaid
+graph LR
+    Start[🚀 Fork px4-sim-suite] --> Develop[📐 Development Phase]
+    Develop --> CI[🔄 CI/CD Pipeline]
+    CI --> Local[💻 Local Testing & Iteration]
+    Local -.iterate.-> Develop
+    CI --> Deploy[🎯 Deployment Ready]
+
+    style Start fill:#4a9eff,stroke:#2d5f99,color:#fff
+    style Develop fill:#f9f,stroke:#d0d,color:#000
+    style CI fill:#9f9,stroke:#0a0,color:#000
+    style Local fill:#ff9,stroke:#990,color:#000
+    style Deploy fill:#f99,stroke:#900,color:#fff
+```
+
+#### 2. Development Phase Detail
+
+This diagram shows the parallel development streams for custom UAV projects:
+
+```mermaid
+graph TB
+    Model[📐 Design Custom Aircraft<br/>• Novel propeller layout<br/>• Custom powertrain<br/>• Unique airframe geometry]
+
+    GazeboModel[🎨 Gazebo Simulation Model<br/>• SDF/URDF definition<br/>• Physics properties<br/>• Visual meshes]
+
+    PX4Custom[⚙️ PX4 Firmware Customization<br/>• Mixer configuration<br/>• Flight controller logic<br/>• Parameter definitions<br/>• Sensor integrations]
+
+    QGCCustom[🖥️ QGroundControl Extensions<br/>• Custom UI widgets<br/>• Vehicle-specific parameters<br/>• Telemetry displays<br/>• Mission planning features]
+
+    TestScenarios[📝 Test Scenarios<br/>tests/scenarios/<br/>• Takeoff/landing<br/>• Hover stability<br/>• Waypoint missions<br/>• Failure modes]
+
+    Model --> GazeboModel
+    Model --> PX4Custom
+    Model --> QGCCustom
+    GazeboModel --> TestScenarios
+    PX4Custom --> TestScenarios
+    QGCCustom --> TestScenarios
+
+    style Model fill:#64b5f6,stroke:#1976d2,color:#000
+    style GazeboModel fill:#ffb74d,stroke:#e65100,color:#000
+    style PX4Custom fill:#ba68c8,stroke:#4a148c,color:#000
+    style QGCCustom fill:#81c784,stroke:#1b5e20,color:#000
+    style TestScenarios fill:#fff176,stroke:#f57f00,color:#000
+```
+
+#### 3. CI/CD Pipeline
+
+This diagram shows the automated testing pipeline that runs on every commit:
+
+```mermaid
+graph TB
+    Commit[git push] --> GHActions[GitHub Actions Trigger]
+
+    GHActions --> Build[🔨 Build Phase<br/>• Compile PX4 firmware<br/>• Build QGC binary<br/>• Validate models]
+
+    Build --> Sim[🎮 Simulation Phase<br/>• Headless Gazebo<br/>• Launch custom aircraft<br/>• Run test scenarios]
+
+    Sim --> Validate[✅ Validation<br/>• Flight logs analysis<br/>• Mission success criteria<br/>• Performance metrics]
+
+    Validate --> Artifacts[📦 Artifacts<br/>• ULog files<br/>• Test reports<br/>• Build binaries]
+
+    Artifacts --> Pass{Tests Pass?}
+    Pass -->|Yes| Success[✅ CI Success]
+    Pass -->|No| Fail[❌ CI Failure]
+
+    style Build fill:#64b5f6,stroke:#0d47a1,color:#000
+    style Sim fill:#81c784,stroke:#1b5e20,color:#000
+    style Validate fill:#fff176,stroke:#f57f00,color:#000
+    style Artifacts fill:#dce775,stroke:#827717,color:#000
+    style Success fill:#66bb6a,stroke:#1b5e20,color:#000
+    style Fail fill:#ef5350,stroke:#b71c1c,color:#fff
+```
+
+**CI/CD Artifacts Example:**
+
+The pipeline generates detailed flight reports showing mission performance and telemetry data:
+
+![Flight Report Example](docs/images/screencapture-file-C-Users-lpurd-AppData-Local-Temp-ad0ddb2a-d47c-4c81-830d-edcfebf8d6e5-simtest-artifacts-3-zip-6e5-flight-report-html-2026-01-28-12_43_54.png)
+
+*Example HTML flight report generated by GitHub Actions CI showing altitude, velocity, and mission event timeline*
+
+#### 4. Local Development Workflows
+
+This diagram shows the different modes for local testing and debugging:
+
+```mermaid
+graph TB
+    Dev[Developer Workstation] --> Choice{Choose Testing Mode}
+
+    Choice --> CLI[🖥️ Headless CLI Testing<br/>./tools/simtest run<br/><br/>Default DevContainer<br/>• Fast automated testing<br/>• CI-equivalent environment<br/>• No GUI overhead]
+
+    Choice --> GUI[🎮 Visual Debugging<br/>./tools/run_sim_with_gui.sh<br/><br/>WSL GUI DevContainer<br/>• See Gazebo simulation<br/>• Debug vehicle behavior<br/>• Automated scenarios with visuals]
+
+    Choice --> Manual[✈️ Manual Flying<br/>./tools/run_sim_with_qgc.sh<br/><br/>WSL GUI DevContainer<br/>• Full QGroundControl integration<br/>• Interactive mission planning<br/>• Manual flight testing]
+
+    CLI --> Iterate[Iterate on Design]
+    GUI --> Iterate
+    Manual --> Iterate
+
+    Iterate -.-> Dev
+
+    style CLI fill:#64b5f6,stroke:#0d47a1,color:#000
+    style GUI fill:#ffb74d,stroke:#e65100,color:#000
+    style Manual fill:#ba68c8,stroke:#4a148c,color:#000
+    style Iterate fill:#81c784,stroke:#1b5e20,color:#000
+```
+
+### Complete Development Workflow
+
+This comprehensive diagram illustrates the complete custom UAV development lifecycle enabled by this infrastructure:
+
+```mermaid
+graph TB
+    Start[🚀 px4-sim-suite<br/>Infrastructure Repo] --> Fork[Fork Repository<br/>for Custom UAV Project]
+
+    Fork --> Develop[Development Phase]
+
+    subgraph Develop[" "]
+        direction TB
+        Model[📐 Design Custom Aircraft<br/>• Novel propeller layout<br/>• Custom powertrain<br/>• Unique airframe geometry]
+
+        GazeboModel[🎨 Create Gazebo Model<br/>• SDF/URDF definition<br/>• Physics properties<br/>• Visual meshes]
+
+        PX4Custom[⚙️ Customize PX4 Firmware<br/>• Mixer configuration<br/>• Flight controller logic<br/>• Parameter definitions<br/>• Sensor integrations]
+
+        QGCCustom[🖥️ Extend QGroundControl<br/>• Custom UI widgets<br/>• Vehicle-specific parameters<br/>• Telemetry displays<br/>• Mission planning features]
+
+        TestScenarios[📝 Define Test Scenarios<br/>tests/scenarios/<br/>• Takeoff/landing<br/>• Hover stability<br/>• Waypoint missions<br/>• Failure modes]
+
+        Model --> GazeboModel
+        Model --> PX4Custom
+        Model --> QGCCustom
+        GazeboModel --> TestScenarios
+        PX4Custom --> TestScenarios
+        QGCCustom --> TestScenarios
+    end
+
+    Develop --> CI[🔄 CI/CD Pipeline]
+
+    subgraph CI[" "]
+        direction TB
+        Commit[git push] --> GHActions[GitHub Actions Trigger]
+        GHActions --> Build[🔨 Build Phase<br/>• Compile PX4 firmware<br/>• Build QGC binary<br/>• Validate models]
+        Build --> Sim[🎮 Simulation Phase<br/>• Headless Gazebo<br/>• Launch custom aircraft<br/>• Run test scenarios]
+        Sim --> Validate[✅ Validation<br/>• Flight logs analysis<br/>• Mission success criteria<br/>• Performance metrics]
+        Validate --> Artifacts[📦 Artifacts<br/>• ULog files<br/>• Test reports<br/>• Build binaries]
+    end
+
+    CI --> Local[💻 Local Development]
+
+    subgraph Local[" "]
+        direction TB
+        CLI[Headless Testing<br/>./tools/simtest run<br/>Default DevContainer]
+        GUI[Visual Debugging<br/>./tools/run_sim_with_gui.sh<br/>WSL GUI DevContainer]
+        Manual[Manual Flying<br/>./tools/run_sim_with_qgc.sh<br/>WSL GUI DevContainer]
+
+        CLI --> Iterate
+        GUI --> Iterate
+        Manual --> Iterate[Iterate on Design]
+    end
+
+    Iterate -.-> Develop
+
+    CI --> Deploy[🎯 Deployment Ready]
+
+    subgraph Deploy[" "]
+        direction LR
+        FirmwareBin[PX4 Firmware<br/>for Hardware]
+        QGCBin[Custom QGC<br/>Ground Station]
+        Models[Validated<br/>Simulation Models]
+        Docs[Test Reports<br/>& Documentation]
+    end
+
+    style Start fill:#4a9eff,stroke:#2d5f99,color:#fff
+    style Develop fill:#f9f,stroke:#d0d,color:#000
+    style CI fill:#9f9,stroke:#0a0,color:#000
+    style Local fill:#ff9,stroke:#990,color:#000
+    style Deploy fill:#f99,stroke:#900,color:#fff
+```
+
+---
+
+## What This Repository Provides
+
+This is an **orchestration and integration layer** that wraps PX4, Gazebo, and QGroundControl to enable:
+
+- Portable, container-friendly execution model
+- Mission-level scenario testing as a first-class concept
+- Artifact contracts (logs, reports) suitable for CI
+- Clear separation between "engine" and "product/system testing"
+- Agentic-AI-friendly contribution boundaries
 - Hybrid human + agentic AI development workflows
-- Portability across:
-	- Ubuntu 24.04
-	- WSL2 (Windows)
-	- GitHub Codespaces
-	- Headless CI (e.g., GitHub Actions)
+- Portability across Ubuntu 24.04, WSL2, GitHub Codespaces, and headless CI
 
-This repository is **not a fork of PX4**.  
-Instead, it is an **orchestration and integration layer** that wraps PX4 and related tools in a way that supports automation, testing, and iteration beyond what PX4 alone provides.
+**This repository is not a fork of PX4.**
+It treats PX4, QGC, and Gazebo models as submodules, allowing you to customize them while maintaining upstream compatibility.
 
 ---
 
@@ -234,3 +452,117 @@ For a single cross-platform entry point, use `tools/run_ci.sh`. Without argument
 * `artifacts/simtest-report.txt` — build and run timing summary (in seconds)
 
 These artifacts help triage build and runtime regressions across platforms while keeping the single `simtest` entry point consistent locally and in CI.
+
+---
+
+## DevContainer Variants
+
+This repository provides **two devcontainer configurations** to support different workflows:
+
+### 1. Default DevContainer (`.devcontainer/devcontainer.json`)
+
+**Purpose:** Headless CI/CD and command-line development
+
+**Use cases:**
+- GitHub Actions CI pipeline
+- Headless automated testing
+- Command-line development
+- GitHub Codespaces (without GUI)
+
+**Features:**
+- Ubuntu 24.04 base
+- All build dependencies pre-installed
+- Python 3.10 with pymavlink
+- PX4 Ubuntu setup (`--no-nuttx`)
+- Gazebo Harmonic toolchain
+- Minimal resource footprint
+
+**Launch:**
+```bash
+# Opens automatically in VS Code with Dev Containers extension
+code .
+```
+
+### 2. WSL GUI DevContainer (`.devcontainer/wsl-gui/devcontainer.json`)
+
+**Purpose:** Visual simulation and manual control with QGroundControl
+
+**Use cases:**
+- Running Gazebo with visible GUI
+- Manual flying with QGroundControl
+- Visual debugging of flight tests
+- Interactive development on Windows WSL2
+
+**Additional features (vs default):**
+- X11/Wayland forwarding for GUI support
+- WSLg integration (`/mnt/wslg`, `/tmp/.X11-unix`)
+- Host networking for display
+- Environment variables: `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR`, `PULSE_SERVER`
+
+**Launch:**
+```bash
+# From VS Code: Select "WSL GUI" configuration
+# Or manually specify the config file
+code --folder-uri vscode-remote://dev-container+/path/to/repo/.devcontainer/wsl-gui/devcontainer.json
+```
+
+### Shared Components
+
+Both devcontainers share the same installation infrastructure:
+
+**Common:**
+- Base image: `mcr.microsoft.com/devcontainers/base:ubuntu-24.04`
+- Dependency manifest: `tools/environment_manifest.json`
+- Installation script: `tools/env_requirements.py install`
+- PX4 setup: `px4/Tools/setup/ubuntu.sh --no-nuttx`
+- Submodule initialization: `git submodule update --init --recursive`
+
+**Divergence points:**
+- WSL GUI adds display mounts and environment variables
+- WSL GUI uses `--net=host` for X11 forwarding
+- Default has no GUI-specific configuration
+
+### Which to Use?
+
+| Workflow | DevContainer | Command Example |
+|----------|-------------|-----------------|
+| CI/CD pipeline | Default | `./tools/simtest run` |
+| Headless testing | Default | `./tools/simtest run` |
+| GUI + automation | WSL GUI | `./tools/run_sim_with_gui.sh` |
+| QGC manual control | WSL GUI | `./tools/run_sim_with_qgc.sh` |
+| Development (no GUI) | Default | Any CLI workflow |
+| Development (with GUI) | WSL GUI | Any GUI workflow |
+
+### GUI Tool Requirements
+
+The following tools **require** the WSL GUI devcontainer:
+- `./tools/run_sim_with_gui.sh` - Visual Gazebo with automated scenario
+- `./tools/run_sim_with_qgc.sh` - Gazebo + QGroundControl
+- `./tools/launch_qgc.sh` - QGroundControl standalone
+
+These tools will fail in the default devcontainer with:
+```
+Error: cannot open display: :0
+```
+
+### Installation Consistency
+
+Both devcontainers use the same installation flow:
+
+```bash
+# 1. Environment manifest defines dependencies
+tools/environment_manifest.json
+
+# 2. Installation script reads manifest
+python3 tools/env_requirements.py install
+
+# 3. PX4 setup script (Gazebo, MAVLink, etc.)
+bash px4/Tools/setup/ubuntu.sh --no-nuttx
+```
+
+This ensures:
+- No duplicate package lists
+- Single source of truth for dependencies
+- Consistent versions across CI and local development
+- Easy updates (edit manifest, rebuild container)
+
