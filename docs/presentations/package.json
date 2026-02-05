@@ -1,0 +1,21 @@
+{
+  "name": "px4-sim-suite-presentations",
+  "private": true,
+  "description": "Marp presentation build tooling for px4-sim-suite",
+  "scripts": {
+    "prerender": "node scripts/prerender-mermaid.mjs",
+    "build:html": "CHROME_PATH=$(which google-chrome 2>/dev/null || which chromium 2>/dev/null) npx marp -I . -o dist",
+    "build:pdf:processed": "for f in $(find . -name '*.processed.md' -not -path './node_modules/*'); do out=\"dist/$(dirname $f)/$(basename $f .processed.md).pdf\"; mkdir -p $(dirname \"$out\"); CHROME_PATH=$(which google-chrome 2>/dev/null || which chromium 2>/dev/null) npx marp --pdf --allow-local-files \"$f\" -o \"$out\"; done",
+    "build:pdf": "npm run prerender && npm run build:pdf:processed",
+    "build": "npm run build:html && npm run build:pdf",
+    "preview": "CHROME_PATH=$(which google-chrome 2>/dev/null || which chromium 2>/dev/null) npx marp --preview -I . -o dist",
+    "snapshot": "CHROME_PATH=$(which google-chrome 2>/dev/null || which chromium 2>/dev/null) npx marp --images png --allow-local-files --image-scale 2 -I . -o dist"
+  },
+  "dependencies": {
+    "@marp-team/marp-cli": "^4",
+    "@marp-team/marp-core": "^4"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.12.0"
+  }
+}
