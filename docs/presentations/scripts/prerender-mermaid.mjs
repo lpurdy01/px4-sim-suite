@@ -30,10 +30,10 @@ function findMarkdownFiles(dir, files = []) {
   return files
 }
 
-async function processFile(mdPath) {
+function processFile(mdPath) {
   const content = readFileSync(mdPath, 'utf-8')
   const matches = [...content.matchAll(MERMAID_REGEX)]
-  
+
   if (matches.length === 0) {
     return null // No mermaid blocks
   }
@@ -41,12 +41,13 @@ async function processFile(mdPath) {
   const dir = dirname(mdPath)
   const base = basename(mdPath, '.md')
   const imgDir = join(dir, 'generated')
-  
+
   if (!existsSync(imgDir)) {
     mkdirSync(imgDir, { recursive: true })
   }
 
-  let processed = content
+  // Render all diagrams first, collecting replacements
+  const replacements = []
   let index = 0
 
   for (const match of matches) {
@@ -54,10 +55,10 @@ async function processFile(mdPath) {
     const imgName = `${base}-mermaid-${index}.svg`
     const imgPath = join(imgDir, imgName)
     const mmdPath = join(imgDir, `${base}-mermaid-${index}.mmd`)
-    
+
     // Write mermaid source
     writeFileSync(mmdPath, mermaidCode)
-    
+
     // Render to SVG using mmdc (--no-sandbox needed in containers)
     try {
       execSync(`npx mmdc -i "${mmdPath}" -o "${imgPath}" -b transparent -p puppeteer-config.json`, {
@@ -71,17 +72,27 @@ async function processFile(mdPath) {
       continue
     }
 
-    // Replace mermaid block with image reference
     const relativePath = `generated/${imgName}`
-    processed = processed.replace(match[0], `![${base} diagram ${index}](${relativePath})`)
+    replacements.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      replacement: `![${base} diagram ${index}](${relativePath})`
+    })
     index++
+  }
+
+  // Apply replacements in reverse order to preserve character offsets
+  let processed = content
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const { start, end, replacement } = replacements[i]
+    processed = processed.slice(0, start) + replacement + processed.slice(end)
   }
 
   // Write processed file
   const processedPath = mdPath.replace('.md', '.processed.md')
   writeFileSync(processedPath, processed)
   console.log(`  → ${processedPath}`)
-  
+
   return processedPath
 }
 
