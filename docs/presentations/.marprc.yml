@@ -1,0 +1,5 @@
+engine: ./.marp/engine.mjs
+html: true
+# Larger slide size to prevent text clipping in diagrams
+# Using 2560x1440 (QHD/2K) for maximum diagram space
+size: 2560x1440
