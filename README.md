@@ -435,10 +435,13 @@ The `run` flow launches a lightweight MAVLink heartbeat helper implemented with 
 
 `tools/simtest` also provides a Stage 8 scaffold for exercising QGroundControl without leaving the repo:
 
+- **Fast mode (default):** leaves `SIMTEST_ENABLE_QGC=0`, so CI/local `./tools/run_ci.sh --inside-devcontainer` only executes PX4 build + Gazebo headless scenario.
+- **Full mode:** set `SIMTEST_ENABLE_QGC=1` to include the additional `simtest qgc build`, `simtest qgc test`, `simtest qgc stub`, and Stage 5 follow-up checks in the same pipeline.
+
 - `sh tools/simtest qgc build` configures QGC with `QGC_BUILD_TESTING=ON` by invoking the Qt toolchain declared in `tools/environment_manifest.json` and produces both the desktop binary and AppImage target inside `build/qgc-simtest/`.
 - `sh tools/simtest qgc test` runs the CTest suite headlessly (`xvfb-run` when available, otherwise `QT_QPA_PLATFORM=offscreen`).
 - `sh tools/simtest qgc stub` launches the `--simple-boot-test` flow under Xvfb (if present) and drives a small MAVLink stub defined in `tools/qgc_virtual_px4.py`; artifacts are written to `artifacts/qgc/`.
-- `SIMTEST_ENABLE_QGC=1 ./tools/run_ci.sh --inside-devcontainer` (or the matching GitHub Actions variable) enables the same steps in CI, appending timing data to `artifacts/simtest-report.txt` alongside dedicated QGC logs.
+- `./tools/run_ci.sh --inside-devcontainer` always reads `SIMTEST_ENABLE_QGC` from the current environment (including the workflow/job env in GitHub Actions) and appends timing data to `artifacts/simtest-report.txt` alongside any enabled QGC logs.
 	- Set `SIMTEST_QGC_SKIP_PARAM_CHECK=1` when you need the stub to succeed without a parameter request (useful for ad-hoc debugging).
 
 ## Development container and CI build flow
@@ -565,4 +568,3 @@ This ensures:
 - Single source of truth for dependencies
 - Consistent versions across CI and local development
 - Easy updates (edit manifest, rebuild container)
-
