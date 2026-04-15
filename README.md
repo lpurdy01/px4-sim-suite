@@ -425,10 +425,13 @@ Scenario selection examples:
 
 ```sh
 SIMTEST_SCENARIO=intercept_lock_bootstrap ./tools/simtest run
+SIMTEST_SCENARIO=vision_lock_static PX4_SIM_MODEL=x500_mono_cam_down PX4_GZ_WORLD=aruco ./tools/simtest run
 SIMTEST_SCENARIO=none ./tools/simtest run
 ```
 
 `intercept_lock_bootstrap` is a non-flight bootstrap scenario that only maintains MAVLink GCS heartbeats and writes a JSON summary to `SIMTEST_SCENARIO_RESULT`, so downstream artifact/report tooling keeps working without changing contracts.
+
+`vision_lock_static` is a non-chase lock-quality scenario that feeds a static target through the tracker and emits lock acquisition/hold metrics (`time_to_first_track_s`, `time_to_lock_s`, `lock_hold_ratio`, `max_gap_s`) to `vision_lock_static_summary.json`.
 
 For Stage-5 intercept prototyping, you can run a one-command local loop where the camera ingest adapter emits JSONL detections directly into the tracker over stdin:
 
