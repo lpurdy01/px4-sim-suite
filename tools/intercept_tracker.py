@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from intercept_adapter_contract import normalize_adapter_frame
+
 
 BBox = tuple[float, float, float, float]
 
@@ -265,7 +267,21 @@ def _iter_logged_frames(path: Path) -> Iterable[dict[str, Any]]:
                 raise SystemExit(f"Invalid JSON in {path} line {line_number}: {exc}") from exc
             if not isinstance(frame, dict):
                 raise SystemExit(f"Expected object JSON in {path} line {line_number}")
-            yield frame
+            yield normalize_adapter_frame(frame)
+
+
+def _iter_stdin_frames() -> Iterable[dict[str, Any]]:
+    for line_number, raw_line in enumerate(sys.stdin, start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            frame = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid JSON in stdin line {line_number}: {exc}") from exc
+        if not isinstance(frame, dict):
+            raise SystemExit(f"Expected object JSON in stdin line {line_number}")
+        yield normalize_adapter_frame(frame)
 
 
 def _iter_simulated_frames(cameras: list[str], duration_s: float, fps: float) -> Iterable[dict[str, Any]]:
@@ -317,6 +333,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--simulate-stream",
         action="store_true",
         help="Generate a synthetic multi-camera stream for integration testing.",
+    )
+    source.add_argument(
+        "--input-stdin-jsonl",
+        action="store_true",
+        help="Read adapter-format frame JSONL from stdin.",
     )
 
     parser.add_argument(
@@ -394,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
         if not cameras:
             raise SystemExit("At least one camera id is required for --simulate-stream")
         frame_iter = _iter_simulated_frames(cameras, args.duration_s, args.fps)
+    elif args.input_stdin_jsonl:
+        frame_iter = _iter_stdin_frames()
     else:
         frame_iter = _iter_logged_frames(args.input_jsonl)
 
