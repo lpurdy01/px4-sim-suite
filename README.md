@@ -430,6 +430,21 @@ SIMTEST_SCENARIO=none ./tools/simtest run
 
 `intercept_lock_bootstrap` is a non-flight bootstrap scenario that only maintains MAVLink GCS heartbeats and writes a JSON summary to `SIMTEST_SCENARIO_RESULT`, so downstream artifact/report tooling keeps working without changing contracts.
 
+For Stage-5 intercept prototyping, you can run a one-command local loop where the camera ingest adapter emits JSONL detections directly into the tracker over stdin:
+
+```sh
+SIMTEST_SCENARIO=intercept_lock_bootstrap ./tools/simtest run && \
+python3 tools/camera_ingest_adapter.py --simulate-camera-stream --camera-id sim_cam_front --duration-s 20 --fps 8 | \
+python3 tools/intercept_tracker.py --input-stdin-jsonl --clear-output
+```
+
+You can still use the tracker’s existing regression and replay entry points when needed:
+
+```sh
+python3 tools/intercept_tracker.py --simulate-stream --clear-output
+python3 tools/intercept_tracker.py --input-jsonl artifacts/intercept_camera_frames.jsonl --clear-output
+```
+
 Each run persists its telemetry and summary artifacts under `artifacts/` (override with `SIMTEST_ARTIFACT_DIR`):
 
 * `<scenario>.log` — live scenario transcript (for default behavior this is `takeoff_land.log`)
