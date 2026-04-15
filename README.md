@@ -421,10 +421,19 @@ Use `sh tools/simtest all` to run both build and simulation in sequence.
 
 If you want to disable automated flight control (for interactive debugging or manual testing), set `SIMTEST_SCENARIO=none` before invoking `simtest run`. To plug in a different scripted mission, drop a Python helper under `tests/scenarios/` and set `SIMTEST_SCENARIO=<name>`.
 
+Scenario selection examples:
+
+```sh
+SIMTEST_SCENARIO=intercept_lock_bootstrap ./tools/simtest run
+SIMTEST_SCENARIO=none ./tools/simtest run
+```
+
+`intercept_lock_bootstrap` is a non-flight bootstrap scenario that only maintains MAVLink GCS heartbeats and writes a JSON summary to `SIMTEST_SCENARIO_RESULT`, so downstream artifact/report tooling keeps working without changing contracts.
+
 Each run persists its telemetry and summary artifacts under `artifacts/` (override with `SIMTEST_ARTIFACT_DIR`):
 
-* `takeoff_land.log` — live scenario transcript (arm, hover, land events)
-* `takeoff_land_summary.json` — hover/landing metrics in JSON
+* `<scenario>.log` — live scenario transcript (for default behavior this is `takeoff_land.log`)
+* `<scenario>_summary.json` — machine-readable JSON produced by the selected scenario via `SIMTEST_SCENARIO_RESULT`
 * `<timestamp>.ulg` — copy of the most recent PX4 flight log for post-flight analysis
 
 Use `sh tools/simtest collect` to list the files produced in the selected artifact directory.
