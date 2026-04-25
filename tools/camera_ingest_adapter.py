@@ -34,7 +34,10 @@ def _iter_jsonl_stream(lines: Iterable[str], source_name: str) -> Iterable[dict[
             raise SystemExit(f"Invalid JSON in {source_name} line {line_number}: {exc}") from exc
         if not isinstance(payload, dict):
             raise SystemExit(f"Expected object JSON in {source_name} line {line_number}")
-        yield normalize_adapter_frame(payload)
+        frame = normalize_adapter_frame(payload, source_name=source_name, line_number=line_number)
+        if frame is None:
+            continue
+        yield frame
 
 
 def _iter_simulated_camera_frames(camera_id: str, duration_s: float, fps: float) -> Iterable[dict[str, Any]]:

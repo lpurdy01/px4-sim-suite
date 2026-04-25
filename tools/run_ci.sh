@@ -18,6 +18,7 @@ run_inside_container() {
   local qgc_test_log="${ARTIFACT_DIR}/qgc-test.log"
   local qgc_stub_log="${ARTIFACT_DIR}/qgc-stub.log"
   local qgc_stage5_log="${ARTIFACT_DIR}/qgc-stage5.log"
+  local vision_log="${ARTIFACT_DIR}/vision-pipeline.log"
 
   : >"${build_log}"
   : >"${run_log}"
@@ -26,6 +27,7 @@ run_inside_container() {
   : >"${qgc_test_log}"
   : >"${qgc_stub_log}"
   : >"${qgc_stage5_log}"
+  : >"${vision_log}"
 
   local build_start
   local build_end
@@ -44,6 +46,27 @@ run_inside_container() {
     printf 'build_seconds=%s\n' "$((build_end - build_start))"
     printf 'run_seconds=%s\n' "$((run_end - run_start))"
   } | tee -a "${report_file}"
+
+  if [[ "${SIMTEST_ENABLE_VISION:-0}" == "1" ]]; then
+    local vision_start
+    local vision_end
+    vision_start=$(date +%s)
+    SIMTEST_VISION_SCENARIO="${SIMTEST_VISION_SCENARIO:-vision_lock_static}" \
+    SIMTEST_VISION_CHECK_MODE="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}" \
+    ./tools/simtest vision 2>&1 | tee "${vision_log}"
+    vision_end=$(date +%s)
+    printf 'vision_seconds=%s\n' "$((vision_end - vision_start))" | tee -a "${report_file}"
+
+    {
+      echo "vision_checker_key_lines_begin"
+      if [[ -f "${ARTIFACT_DIR}/check_vision_lock_metrics.log" ]]; then
+        grep -E "^\[vision-lock-check\]|^  lock_|^  - " "${ARTIFACT_DIR}/check_vision_lock_metrics.log" || true
+      else
+        echo "[vision-lock-check] missing checker log: ${ARTIFACT_DIR}/check_vision_lock_metrics.log"
+      fi
+      echo "vision_checker_key_lines_end"
+    } | tee -a "${report_file}"
+  fi
 
   local latest_ulog
   latest_ulog=$(python3 - "${ARTIFACT_DIR}" <<'PY'

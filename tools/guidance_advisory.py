@@ -98,6 +98,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=0.7,
         help="Absolute clamp for yaw_rate_cmd and pitch_rate_cmd.",
     )
+    parser.add_argument(
+        "--max-seconds",
+        type=float,
+        default=None,
+        help="Maximum runtime before exiting (disabled when omitted).",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=None,
+        help="Maximum advisory rows to emit before exiting (disabled when omitted).",
+    )
+    parser.add_argument(
+        "--exit-on-idle-seconds",
+        type=float,
+        default=None,
+        help="Exit after this many seconds without new input rows while following.",
+    )
     return parser.parse_args(argv)
 
 
@@ -226,6 +244,7 @@ def _iter_jsonl_tail(path: Path, *, follow: bool, poll_interval_s: float):
 
             handle.seek(position)
             time.sleep(max(0.01, poll_interval_s))
+            yield ""
 
 
 def _write_jsonl(path: Path, record: dict[str, Any]) -> None:
@@ -238,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.frame_width <= 0 or args.frame_height <= 0:
         raise SystemExit("--frame-width and --frame-height must be > 0")
+    if args.max_seconds is not None and args.max_seconds <= 0:
+        raise SystemExit("--max-seconds must be > 0 when provided")
+    if args.max_rows is not None and args.max_rows <= 0:
+        raise SystemExit("--max-rows must be > 0 when provided")
+    if args.exit_on_idle_seconds is not None and args.exit_on_idle_seconds <= 0:
+        raise SystemExit("--exit-on-idle-seconds must be > 0 when provided")
 
     if not args.tracks_jsonl.exists():
         raise SystemExit(f"Missing tracker JSONL: {args.tracks_jsonl}")
@@ -247,8 +272,18 @@ def main(argv: list[str] | None = None) -> int:
         args.output_jsonl.write_text("", encoding="utf-8")
 
     processed = 0
+    started_at = time.time()
+    last_activity_at = started_at
     try:
         for line_number, raw_line in enumerate(_iter_jsonl_tail(args.tracks_jsonl, follow=args.follow, poll_interval_s=args.poll_interval_s), start=1):
+            now = time.time()
+            if args.max_seconds is not None and now - started_at >= args.max_seconds:
+                print(f"Reached --max-seconds={args.max_seconds:.3f}, exiting.", file=sys.stderr)
+                break
+            if args.exit_on_idle_seconds is not None and now - last_activity_at >= args.exit_on_idle_seconds:
+                print(f"Reached --exit-on-idle-seconds={args.exit_on_idle_seconds:.3f}, exiting.", file=sys.stderr)
+                break
+
             line = raw_line.strip()
             if not line:
                 continue
@@ -266,6 +301,10 @@ def main(argv: list[str] | None = None) -> int:
             advisory = _advisory_from_track(row, args)
             _write_jsonl(args.output_jsonl, advisory)
             processed += 1
+            last_activity_at = time.time()
+            if args.max_rows is not None and processed >= args.max_rows:
+                print(f"Reached --max-rows={args.max_rows}, exiting.", file=sys.stderr)
+                break
     except KeyboardInterrupt:
         print("Interrupted, stopping tail loop.", file=sys.stderr)
 

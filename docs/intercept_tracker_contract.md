@@ -59,3 +59,13 @@ Logged frame records should provide `timestamp`, `camera_id`, and either:
 - frame-level `bbox` and optional `confidence`.
 
 Optional field `target_signature` can be supplied to enable cross-camera handoff detection.
+
+## Adapter timestamp validation behavior
+
+The shared adapter normalizer (`tools/intercept_adapter_contract.py`) now enforces timestamp validity:
+
+- records with missing / non-numeric timestamps are **dropped**
+- records with non-finite timestamps (`NaN`, `inf`, `-inf`) are **dropped**
+- each dropped record emits an explicit stderr warning with source + line context
+
+This behavior is fail-safe for live streams: invalid rows do not halt pipeline execution, and valid rows continue to flow.

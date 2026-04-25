@@ -267,7 +267,10 @@ def _iter_logged_frames(path: Path) -> Iterable[dict[str, Any]]:
                 raise SystemExit(f"Invalid JSON in {path} line {line_number}: {exc}") from exc
             if not isinstance(frame, dict):
                 raise SystemExit(f"Expected object JSON in {path} line {line_number}")
-            yield normalize_adapter_frame(frame)
+            normalized = normalize_adapter_frame(frame, source_name=str(path), line_number=line_number)
+            if normalized is None:
+                continue
+            yield normalized
 
 
 def _iter_stdin_frames() -> Iterable[dict[str, Any]]:
@@ -281,7 +284,10 @@ def _iter_stdin_frames() -> Iterable[dict[str, Any]]:
             raise SystemExit(f"Invalid JSON in stdin line {line_number}: {exc}") from exc
         if not isinstance(frame, dict):
             raise SystemExit(f"Expected object JSON in stdin line {line_number}")
-        yield normalize_adapter_frame(frame)
+        normalized = normalize_adapter_frame(frame, source_name="stdin", line_number=line_number)
+        if normalized is None:
+            continue
+        yield normalized
 
 
 def _iter_simulated_frames(cameras: list[str], duration_s: float, fps: float) -> Iterable[dict[str, Any]]:
@@ -427,7 +433,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             timestamp = float(timestamp_raw)
         except (TypeError, ValueError):
-            timestamp = time.time()
+            print("[tracker] dropping frame with invalid timestamp from normalized stream", file=sys.stderr)
+            continue
 
         camera_id = str(frame.get("camera_id", "unknown_camera"))
         detections = _frame_to_detections(frame)

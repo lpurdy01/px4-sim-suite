@@ -60,6 +60,12 @@ def _env_path(name: str, default: str) -> Path:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--mode",
+        choices=["scenario-only", "full-pipeline"],
+        default=os.getenv("VISION_LOCK_CHECK_MODE", "full-pipeline"),
+        help="Artifact requirement mode. scenario-only requires summary only; full-pipeline requires summary+tracks+events.",
+    )
+    parser.add_argument(
         "--tracks-jsonl",
         type=Path,
         default=_env_path("VISION_LOCK_TRACKS_JSONL", "artifacts/intercept_tracker_tracks.jsonl"),
@@ -182,11 +188,14 @@ def compute_metrics(
     _ = events  # reserved for future event-specific checks
 
     if not tracks:
+        summary_lock_s = _as_float(summary.get("time_to_lock_s"))
+        summary_hold_ratio = _as_float(summary.get("lock_hold_ratio"))
+        summary_gap_s = _as_float(summary.get("max_gap_s"))
         return ComputedMetrics(
-            lock_acquisition_s=None,
-            lock_hold_ratio=0.0,
+            lock_acquisition_s=summary_lock_s,
+            lock_hold_ratio=summary_hold_ratio if summary_hold_ratio is not None else 0.0,
             dropout_count=0,
-            max_dropout_gap_s=0.0,
+            max_dropout_gap_s=summary_gap_s if summary_gap_s is not None else 0.0,
             lock_quality_percentile_value=None,
             lock_quality_samples=0,
         )
@@ -319,6 +328,20 @@ def evaluate(metrics: ComputedMetrics, thresholds: Thresholds, summary: dict[str
     return failures
 
 
+def _missing_artifacts_for_mode(args: argparse.Namespace) -> list[str]:
+    required: list[tuple[str, Path]] = [("scenario summary JSON", args.scenario_summary_json)]
+    if args.mode == "full-pipeline":
+        required.extend(
+            [
+                ("tracker tracks JSONL", args.tracks_jsonl),
+                ("tracker events JSONL", args.events_jsonl),
+            ]
+        )
+
+    missing = [f"{label}: {path}" for label, path in required if not path.exists()]
+    return missing
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
@@ -335,10 +358,21 @@ def main(argv: list[str]) -> int:
         min_lock_quality_at_percentile=float(args.min_lock_quality_at_percentile),
     )
 
+    missing = _missing_artifacts_for_mode(args)
+    if missing:
+        print("[vision-lock-check] error: missing required artifacts for mode " f"{args.mode!r}:", file=sys.stderr)
+        for item in missing:
+            print(f"  - {item}", file=sys.stderr)
+        return 2
+
     try:
-        tracks = _load_jsonl(args.tracks_jsonl)
-        events = _load_jsonl(args.events_jsonl)
         summary = _load_json(args.scenario_summary_json)
+        if args.mode == "scenario-only":
+            tracks = []
+            events = []
+        else:
+            tracks = _load_jsonl(args.tracks_jsonl) if args.tracks_jsonl.exists() else []
+            events = _load_jsonl(args.events_jsonl) if args.events_jsonl.exists() else []
     except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError) as error:
         print(f"[vision-lock-check] error: {error}", file=sys.stderr)
         return 2
@@ -357,6 +391,12 @@ def main(argv: list[str]) -> int:
     )
 
     failures = evaluate(metrics, thresholds, summary)
+    if args.mode == "scenario-only":
+        failures = [
+            failure
+            for failure in failures
+            if "dropout count too high" not in failure and "lock_quality" not in failure
+        ]
     if failures:
         print("[vision-lock-check] FAIL")
         for failure in failures:
