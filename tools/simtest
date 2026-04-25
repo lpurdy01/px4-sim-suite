@@ -38,6 +38,7 @@ Usage: simtest [build|run|collect|all|qgc|--help]
   run       Run the Gazebo simulation
   collect   Fetch artifacts (logs, flight results)
   all       Execute build + run + collect
+  vision    Run pre-Task-4 vision orchestration pipeline + checker
   qgc       QGroundControl build/test helpers
 USAGE
 }
@@ -595,6 +596,34 @@ run_all() {
   run_collect
 }
 
+run_vision() {
+  require_cmd python3
+  ARTIFACT_DIR=${SIMTEST_ARTIFACT_DIR:-$REPO_ROOT/artifacts}
+  SCENARIO_NAME=${SIMTEST_VISION_SCENARIO:-vision_lock_static}
+  CHECK_MODE=${SIMTEST_VISION_CHECK_MODE:-full-pipeline}
+  CAMERA_DURATION=${SIMTEST_VISION_CAMERA_DURATION:-20}
+  CAMERA_FPS=${SIMTEST_VISION_CAMERA_FPS:-8}
+  SCENARIO_DURATION=${SIMTEST_VISION_SCENARIO_DURATION:-20}
+  PIPELINE_TIMEOUT=${SIMTEST_VISION_PIPELINE_TIMEOUT:-60}
+  GUIDANCE_MAX_SECONDS=${SIMTEST_VISION_GUIDANCE_MAX_SECONDS:-30}
+  GUIDANCE_MAX_ROWS=${SIMTEST_VISION_GUIDANCE_MAX_ROWS:-4000}
+  GUIDANCE_IDLE_SECONDS=${SIMTEST_VISION_GUIDANCE_IDLE_SECONDS:-2}
+
+  mkdir -p "$ARTIFACT_DIR"
+  log "Running pre-Task-4 vision pipeline (scenario=$SCENARIO_NAME, mode=$CHECK_MODE)"
+  python3 "$SCRIPT_DIR/run_vision_pre_task4.py" \
+    --artifact-dir "$ARTIFACT_DIR" \
+    --scenario "$SCENARIO_NAME" \
+    --checker-mode "$CHECK_MODE" \
+    --camera-duration-s "$CAMERA_DURATION" \
+    --camera-fps "$CAMERA_FPS" \
+    --scenario-duration-s "$SCENARIO_DURATION" \
+    --pipeline-timeout-s "$PIPELINE_TIMEOUT" \
+    --guidance-max-seconds "$GUIDANCE_MAX_SECONDS" \
+    --guidance-max-rows "$GUIDANCE_MAX_ROWS" \
+    --guidance-exit-on-idle-seconds "$GUIDANCE_IDLE_SECONDS"
+}
+
 main() {
   cmd=${1-}
 
@@ -610,6 +639,9 @@ main() {
       ;;
     all)
       run_all
+      ;;
+    vision)
+      run_vision
       ;;
     qgc)
       shift || true

@@ -433,15 +433,19 @@ SIMTEST_SCENARIO=none ./tools/simtest run
 
 `vision_lock_static` is a non-chase lock-quality scenario that feeds a static target through the tracker and emits lock acquisition/hold metrics (`time_to_first_track_s`, `time_to_lock_s`, `lock_hold_ratio`, `max_gap_s`) to `vision_lock_static_summary.json`.
 
-For Stage-5 intercept prototyping, you can run a one-command local loop where the camera ingest adapter emits JSONL detections directly into the tracker over stdin:
+For pre-Task-4 vision prototyping, run the integrated orchestration entrypoint:
 
 ```sh
-SIMTEST_SCENARIO=intercept_lock_bootstrap ./tools/simtest run && \
-python3 tools/camera_ingest_adapter.py --simulate-camera-stream --camera-id sim_cam_front --duration-s 20 --fps 8 | \
-python3 tools/intercept_tracker.py --input-stdin-jsonl --clear-output
+./tools/simtest vision
 ```
 
-You can still use the tracker’s existing regression and replay entry points when needed:
+CI/devcontainer mode can include the same loop by setting `SIMTEST_ENABLE_VISION=1`:
+
+```sh
+SIMTEST_ENABLE_VISION=1 ./tools/run_ci.sh --inside-devcontainer
+```
+
+You can still use the tracker’s lower-level regression and replay entry points when needed:
 
 ```sh
 python3 tools/intercept_tracker.py --simulate-stream --clear-output
@@ -453,8 +457,19 @@ Each run persists its telemetry and summary artifacts under `artifacts/` (overri
 * `<scenario>.log` — live scenario transcript (for default behavior this is `takeoff_land.log`)
 * `<scenario>_summary.json` — machine-readable JSON produced by the selected scenario via `SIMTEST_SCENARIO_RESULT`
 * `<timestamp>.ulg` — copy of the most recent PX4 flight log for post-flight analysis
+* `vision_lock_static_summary.json` (or `<scenario>_summary.json`) — vision scenario summary
+* `intercept_tracker_tracks.jsonl` — tracker output stream
+* `intercept_tracker_events.jsonl` — tracker event stream
+* `guidance_advisory.jsonl` — bounded advisory output stream
+* `check_vision_lock_metrics.log` — deterministic PASS/FAIL checker output
+* `camera_ingest_adapter.log`, `intercept_tracker.log`, `guidance_advisory.log` — per-process pipeline logs
 
 Use `sh tools/simtest collect` to list the files produced in the selected artifact directory.
+
+If vision gating fails, check in this order:
+1. `artifacts/check_vision_lock_metrics.log` for exact missing artifacts or failed threshold messages.
+2. `artifacts/<scenario>.log` for scenario runtime or summary generation issues.
+3. `artifacts/intercept_tracker.log` / `artifacts/guidance_advisory.log` for stream contract or idle/timeout exits.
 
 The `run` flow launches a lightweight MAVLink heartbeat helper implemented with `pymavlink` so PX4 no longer reports a missing GCS on startup. The dev container installs this dependency automatically; native environments should ensure `pymavlink` is available (for example via `pip install --user pymavlink`).
 

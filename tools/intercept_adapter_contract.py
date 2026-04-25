@@ -9,6 +9,8 @@ Adapters should emit one JSON object per line with:
 
 from __future__ import annotations
 
+import math
+import sys
 from typing import Any, TypedDict
 
 
@@ -25,13 +27,34 @@ class AdapterFrame(TypedDict):
     detections: list[AdapterDetection]
 
 
-def normalize_adapter_frame(raw: dict[str, Any], *, default_camera_id: str = "unknown_camera") -> dict[str, Any]:
-    """Normalize loosely-typed adapter payloads to the shared tracker contract."""
+def normalize_adapter_frame(
+    raw: dict[str, Any],
+    *,
+    default_camera_id: str = "unknown_camera",
+    source_name: str = "adapter_stream",
+    line_number: int | None = None,
+) -> dict[str, Any] | None:
+    """Normalize loosely-typed adapter payloads to the shared tracker contract.
+
+    Invalid records are dropped with a warning (stderr) instead of coercing
+    malformed timestamps to ``0.0``.
+    """
+    location = source_name if line_number is None else f"{source_name}:{line_number}"
     timestamp_raw = raw.get("timestamp")
     try:
         timestamp = float(timestamp_raw)
     except (TypeError, ValueError):
-        timestamp = 0.0
+        print(
+            f"[adapter-contract] dropping record at {location}: invalid timestamp={timestamp_raw!r}",
+            file=sys.stderr,
+        )
+        return None
+    if not math.isfinite(timestamp):
+        print(
+            f"[adapter-contract] dropping record at {location}: non-finite timestamp={timestamp_raw!r}",
+            file=sys.stderr,
+        )
+        return None
 
     camera_id = str(raw.get("camera_id") or default_camera_id)
 
