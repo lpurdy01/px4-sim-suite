@@ -372,7 +372,7 @@ if [[ "${INSIDE_FLAG}" != "--inside-devcontainer" ]]; then
   devcontainer exec \
     --workspace-folder "${REPO_ROOT}" \
     --config "${DEVCONTAINER_CONFIG}" \
-    -- /bin/bash -lc "./tools/run_ci.sh --inside-devcontainer"
+    -- /bin/bash -lc "SIMTEST_ENABLE_QGC='${SIMTEST_ENABLE_QGC:-0}' SIMTEST_ENABLE_VISION='${SIMTEST_ENABLE_VISION:-0}' ./tools/run_ci.sh --inside-devcontainer"
 else
   run_inside_container
 fi
