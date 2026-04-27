@@ -50,6 +50,7 @@ run_inside_container() {
   if [[ "${vision_enabled}" == "1" ]]; then
     local vision_start
     local vision_end
+    local vision_rc=0
     local vision_scenario="${SIMTEST_VISION_SCENARIO:-vision_lock_static}"
     local vision_check_mode="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}"
     local vision_checker_status="UNKNOWN"
@@ -78,14 +79,18 @@ run_inside_container() {
       echo "[vision-pipeline] context_end"
     } | tee -a "${vision_log}"
     vision_start=$(date +%s)
+    set +e
     SIMTEST_VISION_SCENARIO="${vision_scenario}" \
     SIMTEST_VISION_CHECK_MODE="${vision_check_mode}" \
     ./tools/simtest vision 2>&1 | tee -a "${vision_log}"
+    vision_rc=$?
+    set -e
     vision_end=$(date +%s)
     local vision_seconds="$((vision_end - vision_start))"
     {
       printf 'vision_enabled=1\n'
       printf 'vision_seconds=%s\n' "${vision_seconds}"
+      printf 'vision_pipeline_exit_code=%s\n' "${vision_rc}"
     } | tee -a "${report_file}"
 
     local missing_required=()
@@ -111,6 +116,13 @@ run_inside_container() {
       elif grep -Eq '^\[vision-lock-check\] FAIL$' "${ARTIFACT_DIR}/check_vision_lock_metrics.log"; then
         vision_checker_status="FAIL"
       fi
+    fi
+
+    if [[ "${vision_rc}" -ne 0 && "${vision_checker_status}" == "FAIL" ]]; then
+      echo "warning: vision pipeline returned non-zero because checker reported FAIL; continuing to preserve feedback artifacts" | tee -a "${report_file}" >&2
+    elif [[ "${vision_rc}" -ne 0 ]]; then
+      echo "error: vision pipeline failed with exit code ${vision_rc}" | tee -a "${report_file}" >&2
+      exit "${vision_rc}"
     fi
 
     local parsed_checker_metrics

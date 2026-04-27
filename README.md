@@ -448,8 +448,10 @@ SIMTEST_ENABLE_VISION=1 ./tools/run_ci.sh --inside-devcontainer
 In GitHub Actions (`.github/workflows/simtest-build.yml`), vision is now enabled by default (`SIMTEST_ENABLE_VISION=1`) and can be turned off by setting the repository variable `SIMTEST_ENABLE_VISION=0`. The workflow `runCmd` also exports the same default before invoking `run_ci.sh`, so the vision flag survives container execution boundaries.
 
 `run_ci.sh` now records explicit vision status in `artifacts/simtest-report.txt` for both paths:
-- Vision enabled: `vision_enabled=1`, `vision_seconds=<n>`, plus a `vision_feedback_summary_*` block with checker status, lock metrics, and advisory latency min/p50/p95/max.
+- Vision enabled: `vision_enabled=1`, `vision_seconds=<n>`, `vision_pipeline_exit_code=<n>`, plus a `vision_feedback_summary_*` block with checker status, lock metrics, and advisory latency min/p50/p95/max.
 - Vision disabled: `vision_enabled=0` and `vision_skipped_reason=SIMTEST_ENABLE_VISION_not_set_to_1` (without creating a placeholder `vision-pipeline.log`).
+
+If the vision checker reports `FAIL`, `run_ci.sh` now preserves artifacts and continues (with warning output) so downstream review can still happen; hard failures are still raised for missing/empty required artifacts or non-checker vision crashes.
 
 When vision is enabled, `run_ci.sh` enforces non-empty required feedback artifacts and fails fast with explicit file names if any are missing:
 - `artifacts/vision-pipeline.log`
