@@ -445,6 +445,8 @@ CI/devcontainer mode can include the same loop by setting `SIMTEST_ENABLE_VISION
 SIMTEST_ENABLE_VISION=1 ./tools/run_ci.sh --inside-devcontainer
 ```
 
+In GitHub Actions (`.github/workflows/simtest-build.yml`), vision is now enabled by default (`SIMTEST_ENABLE_VISION=1`) and can be turned off by setting the repository variable `SIMTEST_ENABLE_VISION=0`.
+
 `run_ci.sh` now records explicit vision status in `artifacts/simtest-report.txt` for both paths:
 - Vision enabled: `vision_enabled=1`, `vision_seconds=<n>`, plus a `vision_feedback_summary_*` block with checker status, lock metrics, and advisory latency min/p50/p95/max.
 - Vision disabled: `vision_enabled=0` and `vision_skipped_reason=SIMTEST_ENABLE_VISION_not_set_to_1` (without creating a placeholder `vision-pipeline.log`).

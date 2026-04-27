@@ -50,6 +50,8 @@ run_inside_container() {
   if [[ "${vision_enabled}" == "1" ]]; then
     local vision_start
     local vision_end
+    local vision_scenario="${SIMTEST_VISION_SCENARIO:-vision_lock_static}"
+    local vision_check_mode="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}"
     local vision_checker_status="UNKNOWN"
     local vision_lock_acquisition_s="n/a"
     local vision_lock_hold_ratio="n/a"
@@ -66,10 +68,19 @@ run_inside_container() {
     )
 
     : >"${vision_log}"
+    {
+      echo "[vision-pipeline] context_begin"
+      printf '[vision-pipeline] utc_start=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '[vision-pipeline] git_sha=%s\n' "$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+      printf '[vision-pipeline] scenario=%s\n' "${vision_scenario}"
+      printf '[vision-pipeline] check_mode=%s\n' "${vision_check_mode}"
+      printf '[vision-pipeline] artifact_dir=%s\n' "${ARTIFACT_DIR}"
+      echo "[vision-pipeline] context_end"
+    } | tee -a "${vision_log}"
     vision_start=$(date +%s)
-    SIMTEST_VISION_SCENARIO="${SIMTEST_VISION_SCENARIO:-vision_lock_static}" \
-    SIMTEST_VISION_CHECK_MODE="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}" \
-    ./tools/simtest vision 2>&1 | tee "${vision_log}"
+    SIMTEST_VISION_SCENARIO="${vision_scenario}" \
+    SIMTEST_VISION_CHECK_MODE="${vision_check_mode}" \
+    ./tools/simtest vision 2>&1 | tee -a "${vision_log}"
     vision_end=$(date +%s)
     local vision_seconds="$((vision_end - vision_start))"
     {
@@ -203,6 +214,18 @@ PY
       echo "advisory_latency_s_max=${vision_latency_max}"
       echo "vision_feedback_summary_end"
     } | tee -a "${report_file}"
+    {
+      echo "[vision-pipeline] summary_begin"
+      echo "[vision-pipeline] checker=${vision_checker_status}"
+      echo "[vision-pipeline] lock_acquisition_s=${vision_lock_acquisition_s}"
+      echo "[vision-pipeline] lock_hold_ratio=${vision_lock_hold_ratio}"
+      echo "[vision-pipeline] max_dropout_gap_s=${vision_max_dropout_gap_s}"
+      echo "[vision-pipeline] advisory_latency_s_min=${vision_latency_min}"
+      echo "[vision-pipeline] advisory_latency_s_p50=${vision_latency_p50}"
+      echo "[vision-pipeline] advisory_latency_s_p95=${vision_latency_p95}"
+      echo "[vision-pipeline] advisory_latency_s_max=${vision_latency_max}"
+      echo "[vision-pipeline] summary_end"
+    } | tee -a "${vision_log}"
   else
     {
       printf 'vision_enabled=0\n'
