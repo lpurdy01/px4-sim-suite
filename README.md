@@ -445,6 +445,16 @@ CI/devcontainer mode can include the same loop by setting `SIMTEST_ENABLE_VISION
 SIMTEST_ENABLE_VISION=1 ./tools/run_ci.sh --inside-devcontainer
 ```
 
+`run_ci.sh` now records explicit vision status in `artifacts/simtest-report.txt` for both paths:
+- Vision enabled: `vision_enabled=1`, `vision_seconds=<n>`, plus a `vision_feedback_summary_*` block with checker status, lock metrics, and advisory latency min/p50/p95/max.
+- Vision disabled: `vision_enabled=0` and `vision_skipped_reason=SIMTEST_ENABLE_VISION_not_set_to_1` (without creating a placeholder `vision-pipeline.log`).
+
+When vision is enabled, `run_ci.sh` enforces non-empty required feedback artifacts and fails fast with explicit file names if any are missing:
+- `artifacts/vision-pipeline.log`
+- `artifacts/check_vision_lock_metrics.log`
+- `artifacts/intercept_tracker_tracks.jsonl`
+- `artifacts/guidance_advisory.jsonl`
+
 You can still use the tracker’s lower-level regression and replay entry points when needed:
 
 ```sh
