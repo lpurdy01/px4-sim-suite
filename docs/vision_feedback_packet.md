@@ -2,6 +2,16 @@
 
 Use this packet after running the integrated pre-Task-4 vision loop so human + agent feedback stays consistent.
 
+## Canonical command (CI-equivalent vision-enabled run)
+
+Run this from the repository root:
+
+```bash
+SIMTEST_ENABLE_VISION=1 ./tools/run_ci.sh --inside-devcontainer
+```
+
+This is the canonical command for both local reproduction and GitHub Actions parity when you need full vision feedback artifacts.
+
 ## Required checklist
 
 - [ ] Commit SHA tested
@@ -23,6 +33,8 @@ Use this packet after running the integrated pre-Task-4 vision loop so human + a
 ## Artifact set expected in `artifacts/`
 
 - `<scenario>_summary.json`
+- `simtest-report.txt`
+- `vision-pipeline.log`
 - `intercept_tracker_tracks.jsonl`
 - `intercept_tracker_events.jsonl`
 - `guidance_advisory.jsonl`
@@ -31,6 +43,16 @@ Use this packet after running the integrated pre-Task-4 vision loop so human + a
 - `intercept_tracker.log`
 - `guidance_advisory.log`
 - `<scenario>.log`
+
+## Return checklist for next-stage agent analysis
+
+Provide exactly this bundle after a vision-enabled run:
+
+1. `artifacts/simtest-report.txt`
+2. `artifacts/vision-pipeline.log`
+3. `artifacts/check_vision_lock_metrics.log`
+4. First and last ~40 lines of `artifacts/guidance_advisory.jsonl`
+5. First and last ~40 lines of `artifacts/intercept_tracker_tracks.jsonl`
 
 ## Return-to-agent template (copy/paste)
 
@@ -53,6 +75,12 @@ Use this packet after running the integrated pre-Task-4 vision loop so human + a
 
 #### Latency summary (guidance_advisory.jsonl)
 - latency_s min/p50/p95/max: <values>
+
+#### Requested excerpts
+- guidance_advisory.jsonl (first ~40 lines): <paste>
+- guidance_advisory.jsonl (last ~40 lines): <paste>
+- intercept_tracker_tracks.jsonl (first ~40 lines): <paste>
+- intercept_tracker_tracks.jsonl (last ~40 lines): <paste>
 
 #### Top failure signatures (if any)
 1. <signature + file + one-line impact>

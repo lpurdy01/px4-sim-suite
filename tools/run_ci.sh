@@ -19,6 +19,7 @@ run_inside_container() {
   local qgc_stub_log="${ARTIFACT_DIR}/qgc-stub.log"
   local qgc_stage5_log="${ARTIFACT_DIR}/qgc-stage5.log"
   local vision_log="${ARTIFACT_DIR}/vision-pipeline.log"
+  local vision_enabled="${SIMTEST_ENABLE_VISION:-0}"
 
   : >"${build_log}"
   : >"${run_log}"
@@ -27,7 +28,6 @@ run_inside_container() {
   : >"${qgc_test_log}"
   : >"${qgc_stub_log}"
   : >"${qgc_stage5_log}"
-  : >"${vision_log}"
 
   local build_start
   local build_end
@@ -47,24 +47,201 @@ run_inside_container() {
     printf 'run_seconds=%s\n' "$((run_end - run_start))"
   } | tee -a "${report_file}"
 
-  if [[ "${SIMTEST_ENABLE_VISION:-0}" == "1" ]]; then
+  if [[ "${vision_enabled}" == "1" ]]; then
     local vision_start
     local vision_end
+    local vision_rc=0
+    local vision_scenario="${SIMTEST_VISION_SCENARIO:-vision_lock_static}"
+    local vision_check_mode="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}"
+    local vision_checker_status="UNKNOWN"
+    local vision_lock_acquisition_s="n/a"
+    local vision_lock_hold_ratio="n/a"
+    local vision_max_dropout_gap_s="n/a"
+    local vision_latency_min="n/a"
+    local vision_latency_p50="n/a"
+    local vision_latency_p95="n/a"
+    local vision_latency_max="n/a"
+    local required_vision_files=(
+      "${ARTIFACT_DIR}/vision-pipeline.log"
+      "${ARTIFACT_DIR}/check_vision_lock_metrics.log"
+      "${ARTIFACT_DIR}/intercept_tracker_tracks.jsonl"
+      "${ARTIFACT_DIR}/guidance_advisory.jsonl"
+    )
+
+    : >"${vision_log}"
+    {
+      echo "[vision-pipeline] context_begin"
+      printf '[vision-pipeline] utc_start=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '[vision-pipeline] git_sha=%s\n' "$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+      printf '[vision-pipeline] scenario=%s\n' "${vision_scenario}"
+      printf '[vision-pipeline] check_mode=%s\n' "${vision_check_mode}"
+      printf '[vision-pipeline] artifact_dir=%s\n' "${ARTIFACT_DIR}"
+      echo "[vision-pipeline] context_end"
+    } | tee -a "${vision_log}"
     vision_start=$(date +%s)
-    SIMTEST_VISION_SCENARIO="${SIMTEST_VISION_SCENARIO:-vision_lock_static}" \
-    SIMTEST_VISION_CHECK_MODE="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}" \
-    ./tools/simtest vision 2>&1 | tee "${vision_log}"
+    set +e
+    SIMTEST_VISION_SCENARIO="${vision_scenario}" \
+    SIMTEST_VISION_CHECK_MODE="${vision_check_mode}" \
+    ./tools/simtest vision 2>&1 | tee -a "${vision_log}"
+    vision_rc=$?
+    set -e
     vision_end=$(date +%s)
-    printf 'vision_seconds=%s\n' "$((vision_end - vision_start))" | tee -a "${report_file}"
+    local vision_seconds="$((vision_end - vision_start))"
+    {
+      printf 'vision_enabled=1\n'
+      printf 'vision_seconds=%s\n' "${vision_seconds}"
+      printf 'vision_pipeline_exit_code=%s\n' "${vision_rc}"
+    } | tee -a "${report_file}"
+
+    local missing_required=()
+    local required_file
+    for required_file in "${required_vision_files[@]}"; do
+      if [[ ! -s "${required_file}" ]]; then
+        missing_required+=("${required_file}")
+      fi
+    done
+    if (( ${#missing_required[@]} > 0 )); then
+      {
+        echo "error: vision feedback artifact guard failed; missing or empty required files:"
+        for required_file in "${missing_required[@]}"; do
+          echo "error: missing required vision artifact: ${required_file}"
+        done
+      } | tee -a "${report_file}" >&2
+      exit 1
+    fi
+
+    if [[ -f "${ARTIFACT_DIR}/check_vision_lock_metrics.log" ]]; then
+      if grep -Eq '^\[vision-lock-check\] PASS$' "${ARTIFACT_DIR}/check_vision_lock_metrics.log"; then
+        vision_checker_status="PASS"
+      elif grep -Eq '^\[vision-lock-check\] FAIL$' "${ARTIFACT_DIR}/check_vision_lock_metrics.log"; then
+        vision_checker_status="FAIL"
+      fi
+    fi
+
+    if [[ "${vision_rc}" -ne 0 && "${vision_checker_status}" == "FAIL" ]]; then
+      echo "warning: vision pipeline returned non-zero because checker reported FAIL; continuing to preserve feedback artifacts" | tee -a "${report_file}" >&2
+    elif [[ "${vision_rc}" -ne 0 ]]; then
+      echo "error: vision pipeline failed with exit code ${vision_rc}" | tee -a "${report_file}" >&2
+      exit "${vision_rc}"
+    fi
+
+    local parsed_checker_metrics
+    parsed_checker_metrics="$(python3 - "${ARTIFACT_DIR}/check_vision_lock_metrics.log" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+
+def pick(pattern: str, default: str = "n/a") -> str:
+    match = re.search(pattern, text, re.MULTILINE)
+    return match.group(1).strip() if match else default
+
+print(pick(r"^\s*lock_acquisition_s:\s*(.+)$"))
+print(pick(r"^\s*lock_hold_ratio:\s*(.+)$"))
+print(pick(r"^\s*max_dropout_gap_s:\s*(.+)$"))
+PY
+)"
+    mapfile -t checker_metrics_lines <<<"${parsed_checker_metrics}"
+    if (( ${#checker_metrics_lines[@]} >= 3 )); then
+      vision_lock_acquisition_s="${checker_metrics_lines[0]}"
+      vision_lock_hold_ratio="${checker_metrics_lines[1]}"
+      vision_max_dropout_gap_s="${checker_metrics_lines[2]}"
+    fi
+
+    local parsed_latency_summary
+    parsed_latency_summary="$(python3 - "${ARTIFACT_DIR}/guidance_advisory.jsonl" <<'PY'
+from pathlib import Path
+import json
+import math
+import sys
+
+path = Path(sys.argv[1])
+latencies: list[float] = []
+if path.exists():
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        row = raw.strip()
+        if not row:
+            continue
+        try:
+            payload = json.loads(row)
+        except json.JSONDecodeError:
+            continue
+        value = payload.get("latency_s")
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            latencies.append(float(value))
+
+if not latencies:
+    print("n/a")
+    print("n/a")
+    print("n/a")
+    print("n/a")
+    raise SystemExit(0)
+
+latencies.sort()
+
+def percentile(p: float) -> float:
+    if len(latencies) == 1:
+        return latencies[0]
+    rank = (len(latencies) - 1) * p
+    low = math.floor(rank)
+    high = math.ceil(rank)
+    if low == high:
+        return latencies[low]
+    weight = rank - low
+    return latencies[low] * (1.0 - weight) + latencies[high] * weight
+
+print(f"{latencies[0]:.6f}")
+print(f"{percentile(0.50):.6f}")
+print(f"{percentile(0.95):.6f}")
+print(f"{latencies[-1]:.6f}")
+PY
+)"
+    mapfile -t latency_summary_lines <<<"${parsed_latency_summary}"
+    if (( ${#latency_summary_lines[@]} >= 4 )); then
+      vision_latency_min="${latency_summary_lines[0]}"
+      vision_latency_p50="${latency_summary_lines[1]}"
+      vision_latency_p95="${latency_summary_lines[2]}"
+      vision_latency_max="${latency_summary_lines[3]}"
+    fi
 
     {
       echo "vision_checker_key_lines_begin"
-      if [[ -f "${ARTIFACT_DIR}/check_vision_lock_metrics.log" ]]; then
+      if [[ -s "${ARTIFACT_DIR}/check_vision_lock_metrics.log" ]]; then
         grep -E "^\[vision-lock-check\]|^  lock_|^  - " "${ARTIFACT_DIR}/check_vision_lock_metrics.log" || true
       else
         echo "[vision-lock-check] missing checker log: ${ARTIFACT_DIR}/check_vision_lock_metrics.log"
       fi
       echo "vision_checker_key_lines_end"
+      echo "vision_feedback_summary_begin"
+      echo "vision_enabled=1"
+      echo "vision_checker=${vision_checker_status}"
+      echo "lock_acquisition_s=${vision_lock_acquisition_s}"
+      echo "lock_hold_ratio=${vision_lock_hold_ratio}"
+      echo "max_dropout_gap_s=${vision_max_dropout_gap_s}"
+      echo "advisory_latency_s_min=${vision_latency_min}"
+      echo "advisory_latency_s_p50=${vision_latency_p50}"
+      echo "advisory_latency_s_p95=${vision_latency_p95}"
+      echo "advisory_latency_s_max=${vision_latency_max}"
+      echo "vision_feedback_summary_end"
+    } | tee -a "${report_file}"
+    {
+      echo "[vision-pipeline] summary_begin"
+      echo "[vision-pipeline] checker=${vision_checker_status}"
+      echo "[vision-pipeline] lock_acquisition_s=${vision_lock_acquisition_s}"
+      echo "[vision-pipeline] lock_hold_ratio=${vision_lock_hold_ratio}"
+      echo "[vision-pipeline] max_dropout_gap_s=${vision_max_dropout_gap_s}"
+      echo "[vision-pipeline] advisory_latency_s_min=${vision_latency_min}"
+      echo "[vision-pipeline] advisory_latency_s_p50=${vision_latency_p50}"
+      echo "[vision-pipeline] advisory_latency_s_p95=${vision_latency_p95}"
+      echo "[vision-pipeline] advisory_latency_s_max=${vision_latency_max}"
+      echo "[vision-pipeline] summary_end"
+    } | tee -a "${vision_log}"
+  else
+    {
+      printf 'vision_enabled=0\n'
+      printf 'vision_skipped_reason=SIMTEST_ENABLE_VISION_not_set_to_1\n'
     } | tee -a "${report_file}"
   fi
 
@@ -207,7 +384,7 @@ if [[ "${INSIDE_FLAG}" != "--inside-devcontainer" ]]; then
   devcontainer exec \
     --workspace-folder "${REPO_ROOT}" \
     --config "${DEVCONTAINER_CONFIG}" \
-    -- /bin/bash -lc "./tools/run_ci.sh --inside-devcontainer"
+    -- /bin/bash -lc "SIMTEST_ENABLE_QGC='${SIMTEST_ENABLE_QGC:-0}' SIMTEST_ENABLE_VISION='${SIMTEST_ENABLE_VISION:-0}' ./tools/run_ci.sh --inside-devcontainer"
 else
   run_inside_container
 fi
