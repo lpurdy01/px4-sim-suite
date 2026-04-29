@@ -53,6 +53,7 @@ run_inside_container() {
     local vision_rc=0
     local vision_scenario="${SIMTEST_VISION_SCENARIO:-vision_lock_static}"
     local vision_check_mode="${SIMTEST_VISION_CHECK_MODE:-full-pipeline}"
+    local vision_runtime_mode="${SIMTEST_VISION_REALTIME:-0}"
     local vision_checker_status="UNKNOWN"
     local vision_lock_acquisition_s="n/a"
     local vision_lock_hold_ratio="n/a"
@@ -75,6 +76,7 @@ run_inside_container() {
       printf '[vision-pipeline] git_sha=%s\n' "$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
       printf '[vision-pipeline] scenario=%s\n' "${vision_scenario}"
       printf '[vision-pipeline] check_mode=%s\n' "${vision_check_mode}"
+      printf '[vision-pipeline] runtime_mode=%s\n' "$( [[ "${vision_runtime_mode}" == "1" ]] && echo realtime || echo fast )"
       printf '[vision-pipeline] artifact_dir=%s\n' "${ARTIFACT_DIR}"
       echo "[vision-pipeline] context_end"
     } | tee -a "${vision_log}"
@@ -205,6 +207,50 @@ PY
       vision_latency_p95="${latency_summary_lines[2]}"
       vision_latency_max="${latency_summary_lines[3]}"
     fi
+
+
+    local tracker_rows advisory_rows consistency_result
+    tracker_rows=$(wc -l < "${ARTIFACT_DIR}/intercept_tracker_tracks.jsonl" 2>/dev/null || echo 0)
+    advisory_rows=$(wc -l < "${ARTIFACT_DIR}/guidance_advisory.jsonl" 2>/dev/null || echo 0)
+    consistency_result=$(grep -E '^  consistency_result:' "${ARTIFACT_DIR}/check_vision_lock_metrics.log" | tail -n1 | awk -F': ' '{print $2}' || echo n/a)
+    {
+      echo "vision_runtime_mode=$( [[ "${vision_runtime_mode}" == "1" ]] && echo realtime || echo fast )"
+      echo "vision_stream_frame_count=${tracker_rows}"
+      echo "vision_advisory_row_count=${advisory_rows}"
+      echo "vision_checker_mode=${vision_check_mode}"
+      echo "vision_consistency_result=${consistency_result}"
+      echo "vision_summary_block_begin"
+      echo "vision_checker=${vision_checker_status} mode=${vision_check_mode} runtime=$( [[ "${vision_runtime_mode}" == "1" ]] && echo realtime || echo fast ) frames=${tracker_rows} advisory_rows=${advisory_rows} consistency=${consistency_result} lock_acq=${vision_lock_acquisition_s} hold_ratio=${vision_lock_hold_ratio} max_dropout_gap=${vision_max_dropout_gap_s}"
+      echo "vision_summary_block_end"
+    } | tee -a "${report_file}" | tee -a "${vision_log}" >/dev/null
+
+
+    {
+      echo "vision_tracker_excerpt_begin"
+      if [[ -s "${ARTIFACT_DIR}/intercept_tracker_tracks.jsonl" ]]; then
+        echo "intercept_tracker_tracks_head_30_begin"
+        head -n 30 "${ARTIFACT_DIR}/intercept_tracker_tracks.jsonl" || true
+        echo "intercept_tracker_tracks_head_30_end"
+        echo "intercept_tracker_tracks_tail_30_begin"
+        tail -n 30 "${ARTIFACT_DIR}/intercept_tracker_tracks.jsonl" || true
+        echo "intercept_tracker_tracks_tail_30_end"
+      else
+        echo "intercept_tracker_tracks_missing_or_empty"
+      fi
+      echo "vision_tracker_excerpt_end"
+      echo "vision_advisory_excerpt_begin"
+      if [[ -s "${ARTIFACT_DIR}/guidance_advisory.jsonl" ]]; then
+        echo "guidance_advisory_head_30_begin"
+        head -n 30 "${ARTIFACT_DIR}/guidance_advisory.jsonl" || true
+        echo "guidance_advisory_head_30_end"
+        echo "guidance_advisory_tail_30_begin"
+        tail -n 30 "${ARTIFACT_DIR}/guidance_advisory.jsonl" || true
+        echo "guidance_advisory_tail_30_end"
+      else
+        echo "guidance_advisory_missing_or_empty"
+      fi
+      echo "vision_advisory_excerpt_end"
+    } | tee -a "${report_file}"
 
     {
       echo "vision_checker_key_lines_begin"

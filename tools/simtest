@@ -608,6 +608,7 @@ run_vision() {
   GUIDANCE_MAX_SECONDS=${SIMTEST_VISION_GUIDANCE_MAX_SECONDS:-30}
   GUIDANCE_MAX_ROWS=${SIMTEST_VISION_GUIDANCE_MAX_ROWS:-4000}
   GUIDANCE_IDLE_SECONDS=${SIMTEST_VISION_GUIDANCE_IDLE_SECONDS:-2}
+  REALTIME=${SIMTEST_VISION_REALTIME:-0}
 
   mkdir -p "$ARTIFACT_DIR"
   log "Running pre-Task-4 vision pipeline (scenario=$SCENARIO_NAME, mode=$CHECK_MODE)"
@@ -621,7 +622,8 @@ run_vision() {
     --pipeline-timeout-s "$PIPELINE_TIMEOUT" \
     --guidance-max-seconds "$GUIDANCE_MAX_SECONDS" \
     --guidance-max-rows "$GUIDANCE_MAX_ROWS" \
-    --guidance-exit-on-idle-seconds "$GUIDANCE_IDLE_SECONDS"
+    --guidance-exit-on-idle-seconds "$GUIDANCE_IDLE_SECONDS" \
+    --realtime "$REALTIME"
 }
 
 main() {

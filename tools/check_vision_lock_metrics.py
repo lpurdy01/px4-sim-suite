@@ -1,411 +1,99 @@
 #!/usr/bin/env python3
-"""Validate vision lock metrics from tracker artifacts and scenario summary."""
-
 from __future__ import annotations
-
-import argparse
-import json
-import math
-import os
-import sys
+import argparse, json, math, os, sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-
 @dataclass
-class Thresholds:
-    max_lock_acquisition_s: float
-    min_lock_hold_ratio: float
-    max_dropout_count: int
-    max_dropout_gap_s: float
-    lock_quality_percentile: float
-    min_lock_quality_at_percentile: float
-
-
+class Thresholds: max_lock_acquisition_s: float; min_lock_hold_ratio: float; max_dropout_count: int; max_dropout_gap_s: float; lock_quality_percentile: float; min_lock_quality_at_percentile: float
 @dataclass
-class ComputedMetrics:
-    lock_acquisition_s: float | None
-    lock_hold_ratio: float
-    dropout_count: int
-    max_dropout_gap_s: float
-    lock_quality_percentile_value: float | None
-    lock_quality_samples: int
+class ComputedMetrics: lock_acquisition_s: float|None; lock_hold_ratio: float; dropout_count: int; max_dropout_gap_s: float; lock_quality_percentile_value: float|None; lock_quality_samples: int
 
+def _envf(n,d):
+    v=os.getenv(n); return d if v is None else float(v)
+def _envi(n,d):
+    v=os.getenv(n); return d if v is None else int(v)
+def _as_float(v):
+    try:return None if v is None else float(v)
+    except: return None
 
-def _env_float(name: str, default: float) -> float:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError as error:
-        raise SystemExit(f"Invalid float in ${name}: {value}") from error
+def parse_args(argv):
+    p=argparse.ArgumentParser()
+    p.add_argument("--mode",choices=["scenario-only","full-pipeline"],default=os.getenv("VISION_LOCK_CHECK_MODE","full-pipeline"))
+    p.add_argument("--tracks-jsonl",type=Path,default=Path(os.getenv("VISION_LOCK_TRACKS_JSONL","artifacts/intercept_tracker_tracks.jsonl")))
+    p.add_argument("--events-jsonl",type=Path,default=Path(os.getenv("VISION_LOCK_EVENTS_JSONL","artifacts/intercept_tracker_events.jsonl")))
+    p.add_argument("--scenario-summary-json",type=Path,default=Path(os.getenv("VISION_LOCK_SCENARIO_SUMMARY_JSON","artifacts/vision_lock_static_summary.json")))
+    p.add_argument("--max-lock-acquisition-s",type=float,default=_envf("VISION_LOCK_MAX_ACQUISITION_S",6.0)); p.add_argument("--min-lock-hold-ratio",type=float,default=_envf("VISION_LOCK_MIN_HOLD_RATIO",0.85)); p.add_argument("--max-dropout-count",type=int,default=_envi("VISION_LOCK_MAX_DROPOUT_COUNT",2)); p.add_argument("--max-dropout-gap-s",type=float,default=_envf("VISION_LOCK_MAX_DROPOUT_GAP_S",1.0)); p.add_argument("--lock-quality-percentile",type=float,default=_envf("VISION_LOCK_QUALITY_PERCENTILE",10.0)); p.add_argument("--min-lock-quality-at-percentile",type=float,default=_envf("VISION_LOCK_MIN_QUALITY_AT_PERCENTILE",0.65))
+    p.add_argument("--consistency-lock-s-tol",type=float,default=_envf("VISION_LOCK_CONSISTENCY_LOCK_S_TOL",0.30)); p.add_argument("--consistency-hold-ratio-tol",type=float,default=_envf("VISION_LOCK_CONSISTENCY_HOLD_RATIO_TOL",0.05)); p.add_argument("--consistency-dropout-gap-s-tol",type=float,default=_envf("VISION_LOCK_CONSISTENCY_DROPOUT_GAP_S_TOL",0.30)); p.add_argument("--consistency-strict",action="store_true",default=os.getenv("VISION_LOCK_CONSISTENCY_STRICT","1")=="1")
+    return p.parse_args(argv)
 
+def _loadj(p): return json.loads(p.read_text())
+def _loadjl(p): return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+def _pct(vals,p):
+    vals=sorted(vals); 
+    if not vals: return None
+    if len(vals)==1:return vals[0]
+    r=(p/100)*(len(vals)-1); lo=math.floor(r); hi=math.ceil(r); w=r-lo; return vals[lo]*(1-w)+vals[hi]*w
 
-def _env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError as error:
-        raise SystemExit(f"Invalid int in ${name}: {value}") from error
-
-
-def _env_path(name: str, default: str) -> Path:
-    return Path(os.getenv(name, default))
-
-
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--mode",
-        choices=["scenario-only", "full-pipeline"],
-        default=os.getenv("VISION_LOCK_CHECK_MODE", "full-pipeline"),
-        help="Artifact requirement mode. scenario-only requires summary only; full-pipeline requires summary+tracks+events.",
-    )
-    parser.add_argument(
-        "--tracks-jsonl",
-        type=Path,
-        default=_env_path("VISION_LOCK_TRACKS_JSONL", "artifacts/intercept_tracker_tracks.jsonl"),
-        help="Path to tracker track stream JSONL",
-    )
-    parser.add_argument(
-        "--events-jsonl",
-        type=Path,
-        default=_env_path("VISION_LOCK_EVENTS_JSONL", "artifacts/intercept_tracker_events.jsonl"),
-        help="Path to tracker event stream JSONL",
-    )
-    parser.add_argument(
-        "--scenario-summary-json",
-        type=Path,
-        default=_env_path("VISION_LOCK_SCENARIO_SUMMARY_JSON", "artifacts/vision_lock_static_summary.json"),
-        help="Path to scenario summary JSON",
-    )
-
-    parser.add_argument(
-        "--max-lock-acquisition-s",
-        type=float,
-        default=_env_float("VISION_LOCK_MAX_ACQUISITION_S", 6.0),
-        help="Maximum allowable seconds until first LOCKED",
-    )
-    parser.add_argument(
-        "--min-lock-hold-ratio",
-        type=float,
-        default=_env_float("VISION_LOCK_MIN_HOLD_RATIO", 0.85),
-        help="Minimum required post-lock LOCKED sample ratio [0,1]",
-    )
-    parser.add_argument(
-        "--max-dropout-count",
-        type=int,
-        default=_env_int("VISION_LOCK_MAX_DROPOUT_COUNT", 2),
-        help="Maximum allowed number of post-lock unlock/dropout segments",
-    )
-    parser.add_argument(
-        "--max-dropout-gap-s",
-        type=float,
-        default=_env_float("VISION_LOCK_MAX_DROPOUT_GAP_S", 1.0),
-        help="Maximum allowed dropout segment duration in seconds",
-    )
-    parser.add_argument(
-        "--lock-quality-percentile",
-        type=float,
-        default=_env_float("VISION_LOCK_QUALITY_PERCENTILE", 10.0),
-        help="Percentile to evaluate in lock_quality samples [0,100]",
-    )
-    parser.add_argument(
-        "--min-lock-quality-at-percentile",
-        type=float,
-        default=_env_float("VISION_LOCK_MIN_QUALITY_AT_PERCENTILE", 0.65),
-        help="Minimum acceptable lock_quality at chosen percentile",
-    )
-
-    return parser.parse_args(argv)
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing summary JSON: {path}")
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected object in summary JSON: {path}")
-    return payload
-
-
-def _load_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing JSONL file: {path}")
-
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for idx, raw in enumerate(handle, start=1):
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(f"Invalid JSON in {path}:{idx}: {error}") from error
-            if not isinstance(item, dict):
-                raise ValueError(f"Expected object in {path}:{idx}")
-            rows.append(item)
-    return rows
-
-
-def _percentile(values: list[float], percentile: float) -> float:
-    if not values:
-        raise ValueError("Cannot compute percentile of empty list")
-    if len(values) == 1:
-        return values[0]
-
-    sorted_values = sorted(values)
-    rank = (percentile / 100.0) * (len(sorted_values) - 1)
-    lo = int(math.floor(rank))
-    hi = int(math.ceil(rank))
-    if lo == hi:
-        return sorted_values[lo]
-    weight = rank - lo
-    return sorted_values[lo] * (1.0 - weight) + sorted_values[hi] * weight
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def compute_metrics(
-    tracks: list[dict[str, Any]],
-    events: list[dict[str, Any]],
-    summary: dict[str, Any],
-    lock_quality_percentile: float,
-) -> ComputedMetrics:
-    _ = events  # reserved for future event-specific checks
-
-    if not tracks:
-        summary_lock_s = _as_float(summary.get("time_to_lock_s"))
-        summary_hold_ratio = _as_float(summary.get("lock_hold_ratio"))
-        summary_gap_s = _as_float(summary.get("max_gap_s"))
-        return ComputedMetrics(
-            lock_acquisition_s=summary_lock_s,
-            lock_hold_ratio=summary_hold_ratio if summary_hold_ratio is not None else 0.0,
-            dropout_count=0,
-            max_dropout_gap_s=summary_gap_s if summary_gap_s is not None else 0.0,
-            lock_quality_percentile_value=None,
-            lock_quality_samples=0,
-        )
-
-    first_timestamp: float | None = None
-    first_lock_timestamp: float | None = None
-
-    # Post-lock dropout accounting from tracks.
-    post_lock_total = 0
-    post_lock_locked = 0
-    dropout_count = 0
-    max_dropout_gap_s = 0.0
-    in_dropout = False
-    dropout_started_at: float | None = None
-
-    locked_qualities: list[float] = []
-
+def metrics_from_tracks(tracks, pct):
+    first=None; first_lock=None; total=locked=0; dcnt=0; dmax=0.0; in_d=False; dstart=None; q=[]
     for row in tracks:
-        ts = _as_float(row.get("timestamp"))
-        if ts is None:
-            continue
+        ts=_as_float(row.get("timestamp"));
+        if ts is None: continue
+        if first is None: first=ts
+        state=str(row.get("lock_state",""))
+        if state=="LOCKED" and first_lock is None: first_lock=ts
+        if state=="LOCKED":
+            v=_as_float(row.get("lock_quality"));
+            if v is not None:q.append(v)
+        if first_lock is None: continue
+        total+=1
+        if state=="LOCKED":
+            locked+=1
+            if in_d and dstart is not None: dmax=max(dmax,max(0.0,ts-dstart)); in_d=False; dstart=None
+        elif not in_d:
+            in_d=True; dstart=ts; dcnt+=1
+    if in_d and dstart is not None and tracks:
+        t=_as_float(tracks[-1].get("timestamp"));
+        if t is not None:dmax=max(dmax,max(0.0,t-dstart))
+    acq=None if first is None or first_lock is None else max(0.0, first_lock-first)
+    return ComputedMetrics(acq, 0.0 if total==0 else locked/total, dcnt, dmax, _pct(q,pct), len(q))
 
-        if first_timestamp is None:
-            first_timestamp = ts
+def eval_fail(m,t,s):
+    f=[]; st=str(s.get("status","")).lower().strip()
+    if st and st!="success": f.append(f"scenario status is {st!r}")
+    if m.lock_acquisition_s is None or m.lock_acquisition_s>t.max_lock_acquisition_s: f.append("lock acquisition threshold failed")
+    if m.lock_hold_ratio<t.min_lock_hold_ratio: f.append("lock hold ratio too low")
+    if m.dropout_count>t.max_dropout_count: f.append("dropout count too high")
+    if m.max_dropout_gap_s>t.max_dropout_gap_s: f.append("dropout gap too long")
+    if m.lock_quality_percentile_value is None or m.lock_quality_percentile_value<t.min_lock_quality_at_percentile: f.append("lock quality percentile too low")
+    return f
 
-        lock_state = str(row.get("lock_state", ""))
-        if lock_state == "LOCKED" and first_lock_timestamp is None:
-            first_lock_timestamp = ts
-
-        if lock_state == "LOCKED":
-            quality = _as_float(row.get("lock_quality"))
-            if quality is not None:
-                locked_qualities.append(quality)
-
-        if first_lock_timestamp is None:
-            continue
-
-        post_lock_total += 1
-        if lock_state == "LOCKED":
-            post_lock_locked += 1
-            if in_dropout and dropout_started_at is not None:
-                max_dropout_gap_s = max(max_dropout_gap_s, max(0.0, ts - dropout_started_at))
-                in_dropout = False
-                dropout_started_at = None
-        elif not in_dropout:
-            in_dropout = True
-            dropout_started_at = ts
-            dropout_count += 1
-
-    if in_dropout and dropout_started_at is not None:
-        tail_ts = _as_float(tracks[-1].get("timestamp"))
-        if tail_ts is not None:
-            max_dropout_gap_s = max(max_dropout_gap_s, max(0.0, tail_ts - dropout_started_at))
-
-    computed_lock_acq: float | None
-    if first_timestamp is None or first_lock_timestamp is None:
-        computed_lock_acq = None
-    else:
-        computed_lock_acq = max(0.0, first_lock_timestamp - first_timestamp)
-
-    summary_lock_s = _as_float(summary.get("time_to_lock_s"))
-    lock_acquisition_s = summary_lock_s if summary_lock_s is not None else computed_lock_acq
-
-    summary_hold_ratio = _as_float(summary.get("lock_hold_ratio"))
-    if summary_hold_ratio is not None:
-        lock_hold_ratio = summary_hold_ratio
-    else:
-        lock_hold_ratio = post_lock_locked / max(1, post_lock_total)
-
-    summary_gap_s = _as_float(summary.get("max_gap_s"))
-    if summary_gap_s is not None:
-        max_dropout_gap_s = max(max_dropout_gap_s, summary_gap_s)
-
-    percentile_value = None
-    if locked_qualities:
-        percentile_value = _percentile(locked_qualities, lock_quality_percentile)
-
-    return ComputedMetrics(
-        lock_acquisition_s=lock_acquisition_s,
-        lock_hold_ratio=lock_hold_ratio,
-        dropout_count=dropout_count,
-        max_dropout_gap_s=max_dropout_gap_s,
-        lock_quality_percentile_value=percentile_value,
-        lock_quality_samples=len(locked_qualities),
-    )
-
-
-def evaluate(metrics: ComputedMetrics, thresholds: Thresholds, summary: dict[str, Any]) -> list[str]:
-    failures: list[str] = []
-
-    status = str(summary.get("status", "")).strip().lower()
-    if status and status != "success":
-        failures.append(f"scenario status is {status!r} (expected 'success')")
-
-    if metrics.lock_acquisition_s is None:
-        failures.append("no lock acquisition observed (time_to_lock unavailable)")
-    elif metrics.lock_acquisition_s > thresholds.max_lock_acquisition_s:
-        failures.append(
-            "lock acquisition too slow: "
-            f"{metrics.lock_acquisition_s:.3f}s > {thresholds.max_lock_acquisition_s:.3f}s"
-        )
-
-    if metrics.lock_hold_ratio < thresholds.min_lock_hold_ratio:
-        failures.append(
-            "lock hold ratio too low: "
-            f"{metrics.lock_hold_ratio:.4f} < {thresholds.min_lock_hold_ratio:.4f}"
-        )
-
-    if metrics.dropout_count > thresholds.max_dropout_count:
-        failures.append(
-            f"dropout count too high: {metrics.dropout_count} > {thresholds.max_dropout_count}"
-        )
-
-    if metrics.max_dropout_gap_s > thresholds.max_dropout_gap_s:
-        failures.append(
-            "dropout gap too long: "
-            f"{metrics.max_dropout_gap_s:.3f}s > {thresholds.max_dropout_gap_s:.3f}s"
-        )
-
-    if metrics.lock_quality_percentile_value is None:
-        failures.append("no LOCKED lock_quality samples available")
-    elif metrics.lock_quality_percentile_value < thresholds.min_lock_quality_at_percentile:
-        failures.append(
-            "lock_quality percentile too low: "
-            f"p{thresholds.lock_quality_percentile:.1f}="
-            f"{metrics.lock_quality_percentile_value:.4f} < "
-            f"{thresholds.min_lock_quality_at_percentile:.4f}"
-        )
-
-    return failures
-
-
-def _missing_artifacts_for_mode(args: argparse.Namespace) -> list[str]:
-    required: list[tuple[str, Path]] = [("scenario summary JSON", args.scenario_summary_json)]
-    if args.mode == "full-pipeline":
-        required.extend(
-            [
-                ("tracker tracks JSONL", args.tracks_jsonl),
-                ("tracker events JSONL", args.events_jsonl),
-            ]
-        )
-
-    missing = [f"{label}: {path}" for label, path in required if not path.exists()]
-    return missing
-
-
-def main(argv: list[str]) -> int:
-    args = parse_args(argv)
-
-    if not (0.0 <= args.lock_quality_percentile <= 100.0):
-        print("[vision-lock-check] error: --lock-quality-percentile must be in [0, 100]", file=sys.stderr)
-        return 2
-
-    thresholds = Thresholds(
-        max_lock_acquisition_s=float(args.max_lock_acquisition_s),
-        min_lock_hold_ratio=float(args.min_lock_hold_ratio),
-        max_dropout_count=int(args.max_dropout_count),
-        max_dropout_gap_s=float(args.max_dropout_gap_s),
-        lock_quality_percentile=float(args.lock_quality_percentile),
-        min_lock_quality_at_percentile=float(args.min_lock_quality_at_percentile),
-    )
-
-    missing = _missing_artifacts_for_mode(args)
-    if missing:
-        print("[vision-lock-check] error: missing required artifacts for mode " f"{args.mode!r}:", file=sys.stderr)
-        for item in missing:
-            print(f"  - {item}", file=sys.stderr)
-        return 2
-
-    try:
-        summary = _load_json(args.scenario_summary_json)
-        if args.mode == "scenario-only":
-            tracks = []
-            events = []
-        else:
-            tracks = _load_jsonl(args.tracks_jsonl) if args.tracks_jsonl.exists() else []
-            events = _load_jsonl(args.events_jsonl) if args.events_jsonl.exists() else []
-    except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError) as error:
-        print(f"[vision-lock-check] error: {error}", file=sys.stderr)
-        return 2
-
-    metrics = compute_metrics(tracks, events, summary, thresholds.lock_quality_percentile)
-
+def main(argv):
+    a=parse_args(argv); t=Thresholds(a.max_lock_acquisition_s,a.min_lock_hold_ratio,a.max_dropout_count,a.max_dropout_gap_s,a.lock_quality_percentile,a.min_lock_quality_at_percentile)
+    req=[a.scenario_summary_json] + ([] if a.mode=="scenario-only" else [a.tracks_jsonl,a.events_jsonl])
+    miss=[str(p) for p in req if not p.exists()]
+    if miss: print("[vision-lock-check] error: missing artifacts\n  - "+"\n  - ".join(miss)); return 2
+    s=_loadj(a.scenario_summary_json); tracks=[] if a.mode=="scenario-only" else _loadjl(a.tracks_jsonl)
+    m = ComputedMetrics(_as_float(s.get("time_to_lock_s_scenario_estimate")), _as_float(s.get("lock_hold_ratio_scenario_estimate")) or 0.0,0,_as_float(s.get("max_gap_s_scenario_estimate")) or 0.0,None,0) if a.mode=="scenario-only" else metrics_from_tracks(tracks,a.lock_quality_percentile)
     print("[vision-lock-check] computed metrics:")
-    print(f"  lock_acquisition_s: {metrics.lock_acquisition_s}")
-    print(f"  lock_hold_ratio: {metrics.lock_hold_ratio:.4f}")
-    print(f"  dropout_count: {metrics.dropout_count}")
-    print(f"  max_dropout_gap_s: {metrics.max_dropout_gap_s:.3f}")
-    print(
-        "  lock_quality_p"
-        f"{thresholds.lock_quality_percentile:.1f}: {metrics.lock_quality_percentile_value} "
-        f"(samples={metrics.lock_quality_samples})"
-    )
-
-    failures = evaluate(metrics, thresholds, summary)
-    if args.mode == "scenario-only":
-        failures = [
-            failure
-            for failure in failures
-            if "dropout count too high" not in failure and "lock_quality" not in failure
-        ]
-    if failures:
-        print("[vision-lock-check] FAIL")
-        for failure in failures:
-            print(f"  - {failure}")
-        return 1
-
-    print("[vision-lock-check] PASS")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    print(f"  checker_mode: {a.mode}"); print(f"  lock_acquisition_s: {m.lock_acquisition_s}"); print(f"  lock_hold_ratio: {m.lock_hold_ratio:.4f}"); print(f"  dropout_count: {m.dropout_count}"); print(f"  max_dropout_gap_s: {m.max_dropout_gap_s:.3f}")
+    if a.mode=="full-pipeline":
+      print("[vision-lock-check] consistency_check:")
+      deltas=[]
+      for key,tol in [("time_to_lock_s_scenario_estimate",a.consistency_lock_s_tol),("lock_hold_ratio_scenario_estimate",a.consistency_hold_ratio_tol),("max_gap_s_scenario_estimate",a.consistency_dropout_gap_s_tol)]:
+        sv=_as_float(s.get(key)); mv={"time_to_lock_s_scenario_estimate":m.lock_acquisition_s,"lock_hold_ratio_scenario_estimate":m.lock_hold_ratio,"max_gap_s_scenario_estimate":m.max_dropout_gap_s}[key]
+        if sv is None or mv is None: continue
+        d=abs(sv-mv); deltas.append((key,d,tol))
+        status="PASS" if d<=tol else ("FAIL" if a.consistency_strict else "WARN")
+        print(f"  {key}: scenario={sv} stream={mv} delta={d:.4f} tol={tol:.4f} => {status}")
+      bad=[x for x in deltas if x[1]>x[2]]
+      print(f"  consistency_result: {'PASS' if not bad else ('FAIL' if a.consistency_strict else 'WARN')}")
+    fails=eval_fail(m,t,s)
+    if a.mode=="full-pipeline" and a.consistency_strict and any(abs((_as_float(s.get(k)) or 0)-v)>tol for k,v,tol in [("time_to_lock_s_scenario_estimate",m.lock_acquisition_s or 0,a.consistency_lock_s_tol),("lock_hold_ratio_scenario_estimate",m.lock_hold_ratio,a.consistency_hold_ratio_tol),("max_gap_s_scenario_estimate",m.max_dropout_gap_s,a.consistency_dropout_gap_s_tol)] if _as_float(s.get(k)) is not None):
+      fails.append("consistency check divergence exceeded tolerance")
+    if a.mode=="scenario-only": fails=[x for x in fails if "quality" not in x and "dropout count" not in x]
+    if fails:
+      print("[vision-lock-check] FAIL"); [print(f"  - {x}") for x in fails]; return 1
+    print("[vision-lock-check] PASS"); return 0
+if __name__=='__main__': raise SystemExit(main(sys.argv[1:]))
