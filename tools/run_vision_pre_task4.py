@@ -25,6 +25,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--guidance-max-rows", type=int, default=4000, help="Bounded guidance row count")
     parser.add_argument("--guidance-exit-on-idle-seconds", type=float, default=2.0, help="Idle bound for guidance")
     parser.add_argument("--pipeline-timeout-s", type=float, default=60.0, help="Hard timeout for orchestration")
+    parser.add_argument("--realtime", type=int, choices=[0,1], default=0, help="Pace camera/scenario to wall-clock when 1")
     parser.add_argument(
         "--checker-mode",
         choices=["scenario-only", "full-pipeline"],
@@ -174,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
             "--fps",
             str(args.camera_fps),
         ]
+        if int(args.realtime) == 1:
+            camera_cmd.append("--realtime")
         camera_proc = subprocess.Popen(
             camera_cmd,
             stdout=tracker_proc.stdin,
@@ -190,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
             "--fps",
             str(max(1.0, args.camera_fps)),
         ]
+        if int(args.realtime) == 1:
+            scenario_cmd.append("--realtime")
         scenario_env = os.environ.copy()
         scenario_env["SIMTEST_SCENARIO_RESULT"] = str(summary_json)
         scenario_proc = subprocess.Popen(scenario_cmd, stdout=logs["scenario"], stderr=subprocess.STDOUT, env=scenario_env)
@@ -222,6 +227,9 @@ def main(argv: list[str] | None = None) -> int:
         _terminate_processes(processes)
         for handle in logs.values():
             handle.close()
+
+    if advisory_jsonl.exists() and advisory_jsonl.stat().st_size == 0:
+        advisory_jsonl.write_text("{\"type\":\"no_advisory\",\"reason\":\"no_rows_generated\"}\n", encoding="utf-8")
 
     checker_rc = _run_checker(
         repo_root,
